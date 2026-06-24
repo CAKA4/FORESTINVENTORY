@@ -1,0 +1,2061 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1311">
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Plot Card">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<title>Forest Inventory — Plot Card</title>
+<style>
+  :root{
+    --bg:#0e1311; --surface:#161e1a; --surface2:#1b2520; --card:#151d19;
+    --line:#2b362f; --line2:#39463b; --field:#0f1714;
+    --text:#e7ebe6; --muted:#98a299; --faint:#6f7a71;
+    --accent:#4cc079; --accent-dk:#2f9d59; --blaze:#f2792e; --warn:#e0a33a;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{ font-family:var(--sans); color:var(--text); background:var(--bg);
+    font-size:16px; line-height:1.4; -webkit-text-size-adjust:100%; padding-bottom:122px; }
+
+  .appbar{ position:sticky; top:0; z-index:20;
+    background:linear-gradient(180deg,#16271d,#10191450 0%,#0e1311);
+    background:#12201a; border-bottom:1px solid var(--line);
+    color:var(--text); padding:max(12px,env(safe-area-inset-top)) 16px 12px;
+    box-shadow:0 2px 12px rgba(0,0,0,.4); }
+  .appbar h1{ margin:0; font-size:18px; letter-spacing:.04em; font-weight:700; text-transform:uppercase;
+    display:flex; align-items:center; gap:8px; }
+  .appbar .sub{ font-size:12.5px; color:#86a08c; margin-top:3px; letter-spacing:.02em }
+  .hdrstats{ display:flex; align-items:baseline; gap:18px; margin-top:7px; font-family:var(--mono) }
+  .hdrstats .hs{ display:flex; align-items:baseline; gap:6px }
+  .hdrstats .lab{ font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#7aa888 }
+  .hdrstats b{ font-size:21px; color:#fff; font-weight:700 }
+  .hdrstats .ba b, .hdrstats .hs:nth-child(2) b{ color:var(--blaze) }
+  .hdrstats .u{ font-size:11px; color:#7aa888; margin-left:2px }
+  .hdrstats .hbaf{ margin-left:auto; font-size:10.5px; color:#6f8a78; align-self:center }
+  .chip{ float:right; background:#1d2c23; border:1px solid #2f4a39; color:#bfe6cb;
+    font-size:12px; padding:4px 10px; border-radius:999px; font-family:var(--mono); }
+  .mapbtn{ float:right; margin-right:8px; background:#1d2c23; border:1px solid var(--blaze,#c8952a); color:#e8b84b;
+    font-size:12px; padding:4px 11px; border-radius:999px; font-family:var(--mono); cursor:pointer; }
+  /* ----- map overlay ----- */
+  #mapView{ display:none; position:fixed; inset:0; z-index:5000; background:#0a140a; }
+  #fmap{ position:absolute; inset:0; top:52px; background:#0a140a; }
+  .leaflet-container{ background:#0a140a; }
+  .map-top{ position:absolute; top:0; left:0; right:0; height:52px; z-index:5200;
+    background:#0f1e0d; border-bottom:1px solid var(--line2,#33623a);
+    display:flex; align-items:center; gap:8px; padding:0 10px; padding-top:env(safe-area-inset-top); }
+  .map-back{ background:none; border:1px solid var(--line2,#33623a); color:#e8f0e6; font:inherit; font-size:13px;
+    padding:6px 12px; border-radius:7px; cursor:pointer; }
+  .map-load{ margin-left:auto; background:#16271a; border:1px solid var(--line2,#33623a); color:#bfe6cb; font:inherit;
+    font-size:11px; padding:6px 10px; border-radius:7px; cursor:pointer; font-family:var(--mono); }
+  .map-load.has{ border-color:#c8952a; color:#e8b84b; }
+  .layers-menu{ position:absolute; top:54px; right:10px; z-index:5300; background:#0f1e0d; border:1px solid var(--line2,#33623a);
+    border-radius:10px; padding:8px; box-shadow:0 6px 20px rgba(0,0,0,.6); display:flex; flex-direction:column; gap:6px; width:min(82vw,300px); }
+  .layers-menu>button{ text-align:left; padding:11px 12px; border-radius:8px; border:1px solid var(--line2,#33623a); background:#16271a; color:#e8f0e6; font:inherit; font-size:13px; cursor:pointer; }
+  .map-rail{ position:absolute; right:10px; top:64px; z-index:5200; display:flex; flex-direction:column; gap:8px; }
+  .map-tool{ width:44px; height:44px; border-radius:10px; background:rgba(15,30,13,.92); border:1px solid var(--line2,#33623a);
+    color:#bfe6cb; font-size:19px; cursor:pointer; box-shadow:0 2px 10px rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; }
+  .map-tool.on{ border-color:#c8952a; color:#e8b84b; background:#1c2e14; }
+  .pdf-opacity-bar{ position:absolute; left:10px; bottom:180px; z-index:5200; display:flex; align-items:center; gap:8px;
+    background:rgba(15,30,13,.92); border:1px solid var(--line2,#33623a); border-radius:8px; padding:6px 11px; font-family:var(--mono); }
+  .pdf-opacity-bar label{ font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:#7a9a76; }
+  .pdf-opacity-bar input[type=range]{ width:90px; accent-color:#c8952a; }
+  .pdf-opacity-bar span{ font-size:10px; color:#bfe6cb; width:30px; }
+  .measure-bar{ position:absolute; left:50%; transform:translateX(-50%); bottom:64px; z-index:5300; display:flex; align-items:center; gap:8px;
+    background:rgba(15,30,13,.95); border:1px solid var(--line2,#33623a); border-radius:9px; padding:8px 11px; box-shadow:0 4px 16px rgba(0,0,0,.5); }
+  .measure-bar #measureText{ font-family:var(--mono); font-size:12px; color:#e8b84b; white-space:nowrap; }
+  .measure-bar button{ background:#16271a; border:1px solid var(--line2,#33623a); color:#cdebcf; font:inherit; font-size:11px; text-transform:uppercase; letter-spacing:.05em; padding:6px 10px; border-radius:7px; cursor:pointer; }
+  .map-standpill{ font-family:var(--mono); text-align:center; }
+  .map-standpill .k{ display:block; font-size:8px; letter-spacing:.12em; text-transform:uppercase; color:#7a9a76; }
+  .map-standpill b{ font-size:16px; color:#7a9a76; }
+  .map-standpill.in b{ color:#e8b84b; }
+  .map-legend{ position:absolute; left:10px; bottom:118px; z-index:5200; font-family:var(--mono); font-size:10px;
+    color:#9ab; background:rgba(15,30,13,.82); border:1px solid #284a2c; border-radius:7px; padding:6px 9px;
+    display:flex; flex-direction:column; gap:3px; }
+  .map-legend i{ display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; vertical-align:middle; }
+  .map-field{ position:absolute; left:10px; right:10px; bottom:66px; z-index:5200; display:flex; align-items:center; gap:8px;
+    background:rgba(15,30,13,.92); border:1px solid #284a2c; border-radius:8px; padding:7px 10px; }
+  .map-field label{ font-size:10px; color:#7a9a76; font-family:var(--mono); letter-spacing:.06em; white-space:nowrap; }
+  .map-field select{ flex:1; font:inherit; font-size:14px; color:#e8f0e6; background:#16271a; border:1px solid #33623a; border-radius:6px; padding:7px 8px; }
+  .map-drop{ position:absolute; left:10px; right:60px; bottom:10px; z-index:5200; }
+  .dropbtn{ width:100%; padding:14px; border-radius:10px; border:1px solid #33623a; background:#3d7a35; color:#0b160a;
+    font:inherit; font-size:14px; font-weight:700; letter-spacing:.03em; cursor:pointer; box-shadow:0 4px 16px rgba(0,0,0,.5); }
+  .standlabel{ font-family:var(--mono); font-size:11px; font-weight:700; color:#fff; text-shadow:0 1px 3px #000,0 0 6px #000; white-space:nowrap; }
+  .archive-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; max-height:48vh; overflow-y:auto; }
+  .archive-grid .pcell{ position:relative; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#0e1311; }
+  .archive-grid .pcell img{ width:100%; height:78px; object-fit:cover; display:block; }
+  .archive-grid .pcap{ font-family:var(--mono); font-size:8.5px; color:#9ab; padding:3px 4px; line-height:1.3; word-break:break-all; }
+  .archive-grid .pstat{ position:absolute; top:3px; left:3px; font-size:9px; padding:1px 5px; border-radius:999px; font-family:var(--mono); }
+  .archive-grid .pstat.up{ background:#16331c; color:#7bdc8b; border:1px solid #2f6a38; }
+  .archive-grid .pstat.q{ background:#3a2f12; color:#e8b84b; border:1px solid #6a5320; }
+  .archive-grid .pdel{ position:absolute; top:3px; right:3px; width:20px; height:20px; border-radius:50%;
+    background:rgba(0,0,0,.6); border:none; color:#fff; font-size:12px; cursor:pointer; line-height:1; }
+  /* quick tally */
+  .qt-bar{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+  .qt-toggle{ background:#1d2c23; border:1px solid var(--line2,#33623a); color:#bfe6cb; font:inherit; font-size:13px;
+    padding:7px 12px; border-radius:8px; cursor:pointer; }
+  .qt-toggle.on{ background:#214a2a; border-color:#c8952a; color:#e8b84b; }
+  .qt-hint{ font-size:11px; color:var(--dim,#7a9a76); font-family:var(--mono); }
+  #quickPanel{ background:#0e1a10; border:1px solid var(--line,#284a2c); border-radius:10px; padding:11px; margin-bottom:10px; }
+  .qt-controls{ display:flex; gap:10px; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .qt-dbh{ display:flex; align-items:center; gap:10px; }
+  .qt-step{ width:46px; height:46px; border-radius:10px; border:1px solid var(--line2,#33623a); background:#16271a; color:#e8f0e6; font-size:24px; cursor:pointer; }
+  .qt-dbhval{ text-align:center; min-width:64px; } .qt-dbhval b{ font-size:24px; color:#e8b84b; font-family:var(--mono); } .qt-dbhval span{ display:block; font-size:9px; color:var(--dim,#7a9a76); letter-spacing:.08em; }
+  .qt-qual{ display:flex; gap:6px; } .qt-q{ padding:8px 12px; border-radius:8px; border:1px solid var(--line2,#33623a); background:#16271a; color:#9ab; font:inherit; font-size:13px; cursor:pointer; }
+  .qt-q.on{ background:#214a2a; border-color:#3d7a35; color:#cdebcf; }
+  .qt-pal{ display:grid; grid-template-columns:repeat(4,1fr); gap:7px; }
+  .qt-pal button{ padding:11px 4px; border-radius:9px; border:1px solid var(--line2,#33623a); background:#16271a; color:#e8f0e6;
+    font:inherit; font-size:14px; font-weight:600; cursor:pointer; }
+  .qt-pal button:active{ background:#2c5733; }
+  .qt-more{ width:100%; margin-top:8px; padding:9px; border-radius:8px; border:1px dashed var(--line2,#33623a); background:none; color:#bfe6cb; font:inherit; font-size:12px; cursor:pointer; }
+  .qt-list{ margin-top:10px; display:flex; flex-direction:column; gap:5px; }
+  .qt-row{ display:flex; align-items:center; gap:8px; background:#13241a; border:1px solid var(--line,#284a2c); border-radius:7px; padding:5px 8px; font-family:var(--mono); font-size:13px; }
+  .qt-row .sp{ font-weight:700; color:#cdebcf; min-width:34px; } .qt-row .db{ color:#9ab; } .qt-row .ct{ margin-left:auto; color:#e8b84b; font-weight:700; }
+  .qt-row button{ width:26px; height:26px; border-radius:6px; border:1px solid var(--line2,#33623a); background:#16271a; color:#e8f0e6; font-size:16px; cursor:pointer; }
+  /* more menu */
+  .more-list{ display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
+  .more-list button{ text-align:left; padding:13px 14px; border-radius:9px; border:1px solid var(--line2,#33623a); background:#16271a; color:#e8f0e6; font:inherit; font-size:14px; cursor:pointer; }
+  /* summary */
+  .summary-body{ font-size:13px; color:#dfeede; line-height:1.55; }
+  .summary-body .big{ display:flex; gap:8px; flex-wrap:wrap; margin:4px 0 12px; }
+  .summary-body .metric{ flex:1; min-width:84px; background:#13241a; border:1px solid var(--line,#284a2c); border-radius:9px; padding:9px 10px; }
+  .summary-body .metric .k{ font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:var(--dim,#7a9a76); }
+  .summary-body .metric .v{ font-size:19px; font-family:var(--mono); color:#e8b84b; margin-top:2px; }
+  .summary-body .metric .v small{ font-size:10px; color:#9ab; }
+  .summary-body .comp{ font-family:var(--mono); font-size:12px; }
+  .summary-body .comp .bar{ height:8px; border-radius:4px; background:#3d7a35; margin-top:2px; }
+  .summary-body .note{ font-size:11px; color:var(--dim,#7a9a76); margin-top:10px; }
+  /* validate */
+  .validate-body{ display:flex; flex-direction:column; gap:8px; margin-bottom:6px; max-height:50vh; overflow-y:auto; }
+  .validate-body .v-item{ display:flex; gap:9px; align-items:flex-start; font-size:13px; padding:9px 10px; border-radius:8px; line-height:1.4; }
+  .validate-body .v-item.block{ background:#2a1513; border:1px solid #7a3a32; color:#f0c9c2; }
+  .validate-body .v-item.warn{ background:#2a2512; border:1px solid #6a5a20; color:#ead9a0; }
+  .validate-body .v-item .ic{ font-size:15px; }
+  .wrap{ max-width:760px; margin:0 auto; padding:14px 12px 0 }
+
+  details.sec{ background:var(--card); border:1px solid var(--line); border-radius:11px; margin:0 0 12px; overflow:hidden }
+  details.sec>summary{ list-style:none; cursor:pointer; padding:13px 14px; font-weight:700; font-size:13.5px;
+    letter-spacing:.05em; text-transform:uppercase; color:#dfeae1; background:var(--surface2);
+    border-left:3px solid var(--accent-dk); display:flex; align-items:center; gap:10px; user-select:none; }
+  details.sec>summary::-webkit-details-marker{display:none}
+  details.sec>summary .ix{ font-family:var(--mono); font-size:12px; background:#0f1714; color:#7fd0a0;
+    border:1px solid #284033; border-radius:5px; padding:2px 7px; }
+  details.sec>summary .arw{ margin-left:auto; transition:transform .18s; font-size:12px; color:var(--faint) }
+  details.sec[open]>summary .arw{ transform:rotate(90deg) }
+  .secbody{ padding:14px }
+
+  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px 12px }
+  .grid.three{ grid-template-columns:1fr 1fr 1fr }
+  .full{ grid-column:1/-1 }
+  label{ display:block; font-size:11.5px; font-weight:600; color:var(--muted); letter-spacing:.03em;
+    margin-bottom:4px; text-transform:uppercase }
+  label .code{ font-family:var(--mono); color:var(--faint); font-weight:600; text-transform:none }
+  input,select,textarea{ width:100%; font:inherit; font-size:16px; color:var(--text); background:var(--field);
+    border:1px solid var(--line2); border-radius:8px; padding:11px 12px; min-height:46px; appearance:none; -webkit-appearance:none;
+    scroll-margin-top:120px; }
+  .rep, details.sec>summary, .addbtn{ scroll-margin-top:120px }
+  select{ background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+    background-position:calc(100% - 18px) 20px,calc(100% - 13px) 20px; background-size:5px 5px,5px 5px; background-repeat:no-repeat; padding-right:34px; }
+  input[type=number]{ font-family:var(--mono) }
+  textarea{ min-height:78px; resize:vertical; line-height:1.4 }
+  input::placeholder,textarea::placeholder{ color:var(--faint) }
+  input:focus,select:focus,textarea:focus{ outline:3px solid rgba(76,192,121,.30); outline-offset:1px; border-color:var(--accent) }
+  .row-inline{ display:flex; gap:8px } .row-inline input{ flex:1 }
+  .btn-mini{ flex:0 0 auto; min-height:46px; padding:0 14px; border:1px solid var(--accent-dk);
+    background:#163322; color:#bfe6cb; border-radius:8px; font-weight:600; font-size:13px; cursor:pointer }
+  .hint{ font-size:11.5px; color:var(--muted); margin-top:4px; line-height:1.4 }
+
+  .rows{ display:flex; flex-direction:column; gap:8px }
+  .rep{ display:grid; gap:6px; align-items:end; background:var(--surface); border:1px solid var(--line); border-radius:9px; padding:9px }
+  .rep.tree{ grid-template-columns:1.4fr .8fr .9fr .9fr .7fr auto }
+  .rep.pair{ grid-template-columns:1.6fr 1fr auto }
+  .rep label{ margin-bottom:2px; font-size:10px } .rep .n{ font-family:var(--mono); font-size:11px; color:var(--muted) }
+  .rep input,.rep select{ min-height:42px; padding:8px 9px; font-size:15px }
+  .rep select{ background-position:calc(100% - 14px) 18px,calc(100% - 10px) 18px; padding-right:26px }
+  .del{ min-height:42px; width:42px; border:1px solid #5a3324; background:#2a1813; color:#f0a085;
+    border-radius:8px; font-size:18px; cursor:pointer; line-height:1; align-self:center }
+  .addbtn{ margin-top:9px; width:100%; min-height:48px; border:1.5px dashed var(--accent-dk); background:#12231a;
+    color:#8fd9aa; border-radius:9px; font-weight:700; font-size:14px; cursor:pointer; letter-spacing:.03em }
+  .grouphd{ font-size:12px; font-weight:700; color:#8fd9aa; text-transform:uppercase; letter-spacing:.05em;
+    margin:4px 0 8px; padding-bottom:5px; border-bottom:1px solid var(--line) }
+  .grouphd:not(:first-child){ margin-top:18px }
+
+  .tally{ background:linear-gradient(135deg,#15281d,#0f1714); border:1px solid #284033; border-radius:11px;
+    padding:13px 15px; margin-bottom:12px; display:flex; gap:20px; align-items:baseline; font-family:var(--mono); flex-wrap:wrap }
+  .tally b{ font-size:27px; color:#fff; font-weight:700 }
+  .tally .lab{ font-size:10px; letter-spacing:.14em; color:#7aa888; text-transform:uppercase; display:block; margin-bottom:1px }
+  .tally .ba b{ color:var(--blaze) }
+  .tally .baf{ margin-left:auto; font-size:10.5px; color:#6f8a78; align-self:center }
+
+  .actionbar{ position:fixed; left:0; right:0; bottom:0; z-index:25; background:#0c100e;
+    border-top:1px solid var(--line2); padding:10px 12px calc(10px + env(safe-area-inset-bottom)); }
+  .actionbar .inner{ max-width:760px; margin:0 auto; display:flex; gap:9px; align-items:center }
+  .liveread{ font-family:var(--mono); font-size:11.5px; color:var(--muted); flex:1; line-height:1.3 }
+  .liveread b{ color:var(--text); font-size:14px }
+  .liveread .dot{ display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--faint); margin-right:5px; vertical-align:middle }
+  .liveread .dot.on{ background:var(--accent) } .liveread .dot.off{ background:var(--blaze) }
+  .btn{ min-height:50px; padding:0 16px; border-radius:9px; font-weight:700; font-size:14.5px; cursor:pointer;
+    border:1px solid transparent; letter-spacing:.02em; white-space:nowrap }
+  .btn.submit{ background:var(--accent); color:#06160d; border-color:var(--accent-dk); flex:0 0 auto }
+  .btn.submit:active{ background:var(--accent-dk) }
+  .btn.ghost{ background:transparent; color:#bfe6cb; border-color:#2f4a39; flex:0 0 auto; padding:0 12px }
+
+  .saved-empty{ color:var(--muted); font-size:13px; padding:6px 0 }
+  table.saved{ width:100%; border-collapse:collapse; font-size:13px }
+  table.saved th,table.saved td{ text-align:left; padding:8px 6px; border-bottom:1px solid var(--line) }
+  table.saved th{ font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted) }
+  table.saved td.num{ font-family:var(--mono) }
+  .st{ font-family:var(--mono); font-size:11px; padding:2px 6px; border-radius:5px }
+  .st.sent{ background:#163322; color:#7fd0a0; border:1px solid #2f4a39 }
+  .st.queued{ background:#33240f; color:var(--warn); border:1px solid #5a4420 }
+  .tbtn{ border:1px solid var(--line2); background:var(--field); color:var(--text); border-radius:7px; padding:6px 9px; font-size:12px; cursor:pointer; margin-right:5px }
+  .tbtn.del{ color:#f0a085; border-color:#5a3324 }
+
+  .footnote{ font-size:11.5px; color:var(--muted); text-align:center; padding:4px 16px 0; line-height:1.6 }
+  .pill{ display:inline-block; font-family:var(--mono); font-size:11px; background:#101714; border:1px solid var(--line2);
+    border-radius:5px; padding:1px 6px; color:#9aa49b }
+  .setupwarn{ background:#33240f; border:1px solid #5a4420; color:#f0d49a; border-radius:9px; padding:10px 12px;
+    font-size:12.5px; margin-bottom:12px; line-height:1.45 }
+  .editbanner{ background:#0f2a1c; border:1px solid #2f6d45; color:#bfe6cb; border-radius:9px; padding:10px 12px;
+    font-size:13px; margin-bottom:12px; line-height:1.45 }
+  .editbanner a{ color:#7fd0a0; font-weight:700; text-decoration:underline; margin-left:4px }
+  .cruiserbar{ display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted); margin-bottom:12px }
+  .cruiserbar b{ color:var(--text) }
+  .cruiserbar .btn-mini{ margin-left:auto }
+  .chips{ display:flex; flex-wrap:wrap; gap:7px }
+  .chip-tog{ border:1px solid var(--line2); background:var(--field); color:var(--muted); border-radius:999px;
+    padding:9px 13px; font-size:13.5px; cursor:pointer; min-height:42px; line-height:1; -webkit-tap-highlight-color:transparent }
+  .chip-tog.on{ background:#163322; border-color:var(--accent-dk); color:#cdebd6; font-weight:600 }
+  .chip-tog.on::before{ content:"✓ "; color:#7fd0a0 }
+  .modal{ position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:50; display:flex; align-items:center; justify-content:center; padding:20px }
+  .modal-card{ background:var(--card); border:1px solid var(--line2); border-radius:14px; padding:18px; width:100%; max-width:380px; box-shadow:0 20px 60px rgba(0,0,0,.55) }
+  .modal-title{ font-weight:700; font-size:15px; margin-bottom:12px; color:var(--text) }
+  .modal-card input{ margin-bottom:14px }
+  .modal-actions{ display:flex; gap:10px; justify-content:flex-end }
+  .prefill{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px }
+  .prefill .lab{ font-size:12px; color:#86a08c }
+  .picklist{ max-height:48vh; overflow-y:auto; margin:6px 0 12px; display:flex; flex-direction:column; gap:7px }
+  .pickrow{ text-align:left; width:100%; background:var(--field); border:1px solid var(--line2); border-radius:9px;
+    padding:10px 12px; color:var(--text); font:inherit; cursor:pointer }
+  .pickrow:active{ background:var(--line2) }
+  .pickrow b{ color:#fff } .pickrow .meta{ font-size:12px; color:#86a08c; margin-top:2px }
+  .thumbs{ display:flex; flex-wrap:wrap; gap:8px; margin-top:9px }
+  .thumbs .thumb{ position:relative }
+  .thumbs img{ width:64px; height:64px; object-fit:cover; border-radius:8px; border:1px solid var(--line2) }
+  .thumbs .tnum{ position:absolute; bottom:2px; right:2px; background:rgba(0,0,0,.7); color:#cdebd6; font-family:var(--mono);
+    font-size:10px; padding:0 4px; border-radius:4px }
+  .toast{ position:fixed; left:50%; bottom:98px; transform:translateX(-50%) translateY(20px); opacity:0;
+    background:#05221350; background:#0a3320; border:1px solid #2f9d59; color:#dffbe9; padding:11px 18px; border-radius:999px;
+    font-size:13.5px; font-weight:600; z-index:40; transition:opacity .25s,transform .25s; pointer-events:none; box-shadow:0 8px 26px rgba(0,0,0,.5) }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0) }
+  .toast.err{ background:#2a1813; border-color:#5a3324; color:#ffd9c9 }
+  @media (max-width:480px){
+    .grid.three{ grid-template-columns:1fr 1fr 1fr }
+    .rep.tree{ grid-template-columns:1.3fr .85fr 1fr } .rep.tree .del{ grid-column:3; justify-self:end; width:42px }
+  }
+  @media (prefers-reduced-motion:reduce){ *{transition:none!important} }
+</style>
+</head>
+<body>
+<div class="appbar">
+  <span class="chip" id="savedChip">0 saved</span>
+  <button class="mapbtn" type="button" onclick="openMore()">⋯</button>
+  <button class="mapbtn" type="button" onclick="openMap()">🗺 Map</button>
+  <h1>🌲 Forest Inventory</h1>
+  <div class="hdrstats">
+    <span class="hs"><span class="lab">Stems</span><b id="tStems">0</b></span>
+    <span class="hs"><span class="lab">Basal area</span><b id="tBA">0</b><span class="u">m²/ha</span></span>
+    <span class="hbaf">BAF 2.0</span>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="setupwarn" id="setupWarn" style="display:none">
+    ⚙️ Not connected yet — paste your Apps Script Web App URL into <span class="pill">SCRIPT_URL</span> in this file.
+    Until then, plots are saved on this device and can be exported as CSV.
+  </div>
+
+  <div class="editbanner" id="editBanner" style="display:none">
+    ✏️ Editing a saved plot — make changes, then tap <b>Update plot</b>. <a href="javascript:void(0)" onclick="cancelEdit()">Cancel</a>
+  </div>
+
+  <div class="cruiserbar">👤 Entered by <b id="cruiserName">—</b><button class="btn-mini" type="button" onclick="openCruiser()">Change</button></div>
+
+  <details class="sec" open>
+    <summary><span class="ix">01</span>Plot header<span class="arw">▶</span></summary>
+    <div class="secbody">
+      <div class="prefill">
+        <span class="lab">Prefill from a saved plot:</span>
+        <button class="btn-mini" type="button" onclick="openPlotPick('site')">Site fields</button>
+        <button class="btn-mini" type="button" onclick="openPlotPick('all')">Everything</button>
+      </div>
+      <div class="grid">
+        <div class="full"><label>Tract / property <span class="code">TRACT</span></label><select id="TRACT"></select></div>
+        <div><label>Stand ID <span class="code">STANDID</span></label><select id="STANDID"></select></div>
+        <div><label>Plot # <span class="code">PLOTNUM</span></label><select id="PLOTNUM"></select></div>
+        <div class="full"><label>Date / time <span class="code">DATE</span></label>
+          <div class="row-inline"><input id="DATE" type="datetime-local" step="1"><button class="btn-mini" type="button" onclick="setNow()">Now</button></div></div>
+      </div>
+      <div class="grouphd">GPS position</div>
+      <div class="grid three">
+        <div><label>Lon <span class="code">X</span></label><input id="X" type="number" inputmode="decimal" step="any"></div>
+        <div><label>Lat <span class="code">Y</span></label><input id="Y" type="number" inputmode="decimal" step="any"></div>
+        <div><label>Elev <span class="code">Z</span></label><input id="Z" type="number" inputmode="decimal" step="any"></div>
+      </div>
+      <button class="addbtn" type="button" onclick="captureGPS()" style="border-style:solid">📍 Capture GPS</button>
+      <div class="hint" id="gpsHint">WGS84 decimal degrees (Lon→X, Lat→Y, Elev→Z). Convert to UTM NAD83 downstream if needed.</div>
+    </div>
+  </details>
+
+  <details class="sec">
+    <summary><span class="ix">02</span>Tree tally<span class="arw">▶</span></summary>
+    <div class="secbody">
+      <div class="qt-bar">
+        <button class="qt-toggle" type="button" id="qtToggle" onclick="toggleQuick()">⚡ Quick tally</button>
+        <span class="qt-hint" id="qtHint"></span>
+      </div>
+      <div id="quickPanel" style="display:none">
+        <div class="qt-controls">
+          <div class="qt-dbh">
+            <button class="qt-step" type="button" onclick="bumpDbh(-2)">−</button>
+            <div class="qt-dbhval"><b id="qtDbh">20</b><span>cm DBH</span></div>
+            <button class="qt-step" type="button" onclick="bumpDbh(2)">＋</button>
+          </div>
+          <div class="qt-qual">
+            <button class="qt-q on" type="button" id="qtQ_AGS" onclick="setQual('AGS')">AGS</button>
+            <button class="qt-q" type="button" id="qtQ_UGS" onclick="setQual('UGS')">UGS</button>
+          </div>
+        </div>
+        <div class="qt-pal" id="qtPalette"></div>
+        <button class="qt-more" type="button" onclick="openQuickMore()">＋ Other species…</button>
+        <div class="qt-list" id="qtList"></div>
+      </div>
+      <div class="rows" id="treeRows"></div>
+      <button class="addbtn" type="button" onclick="addTree(null,true)">＋ Add tree (in)</button>
+      <div class="hint">Each “in” tree on the BAF 2.0 prism. Up to 28 map to <span class="pill">T1…T28</span>: species, DBH (cm), quality, class, merch. logs.</div>
+    </div>
+  </details>
+
+  <details class="sec">
+    <summary><span class="ix">03</span>Sample / site tree<span class="arw">▶</span></summary>
+    <div class="secbody"><div class="grid">
+      <div><label>Ht-tree species <span class="code">HTSPP</span></label><select id="HTSPP"></select></div>
+      <div><label>Ht-tree DBH <span class="code">HTDBH</span></label><select id="HTDBH"></select></div>
+      <div><label>Age — cored, actual yrs <span class="code">AGECORED</span></label><input id="AGECORED" type="number" inputmode="numeric" min="0" max="400" step="1" placeholder="actual age"></div>
+      <div><label>CAI <span class="code">CAI</span></label><select id="CAI"></select></div>
+      <div class="full"><label>Crown closure — % of sky obscured by vegetation <span class="code">CC</span></label><select id="CC"></select></div>
+    </div></div>
+  </details>
+
+  <details class="sec">
+    <summary><span class="ix">04</span>Site &amp; soil<span class="arw">▶</span></summary>
+    <div class="secbody">
+      <div class="grid">
+        <div><label>Texture <span class="code">TEXTURE</span></label><select id="TEXTURE"></select></div>
+        <div><label>Moisture <span class="code">MOISTURE</span></label><select id="MOISTURE"></select></div>
+        <div><label>Depth <span class="code">DEPTH</span></label><select id="DEPTH"></select></div>
+        <div><label>Topography <span class="code">TOPOGRAPHY</span></label><select id="TOPOGRAPHY"></select></div>
+        <div><label>Rockiness <span class="code">ROCKINESS</span></label><select id="ROCKINESS"></select></div>
+        <div><label>Flag <span class="code">FLAG</span></label><select id="FLAG"></select></div>
+        <div><label>Stand boundary <span class="code">STBNDRY</span></label><select id="STBNDRY"></select></div>
+        <div><label>Stick nest <span class="code">STICNEST</span></label><select id="STICNEST"></select></div>
+      </div>
+      <div class="grouphd">Management</div>
+      <div class="grid">
+        <div><label>Access <span class="code">ACCESS</span></label><select id="ACCESS"></select></div>
+        <div><label>Harvest <span class="code">HARVEST</span></label><select id="HARVEST"></select></div>
+        <div><label>Renewal <span class="code">RENEWAL</span></label><select id="RENEWAL"></select></div>
+        <div><label>Tending <span class="code">TENDING</span></label><select id="TENDING"></select></div>
+      </div>
+    </div>
+  </details>
+
+  <details class="sec">
+    <summary><span class="ix">05</span>Regeneration<span class="arw">▶</span></summary>
+    <div class="secbody">
+      <div class="grouphd">Advance regen <span class="pill">ADRGN 1–5</span></div>
+      <div class="rows" id="adrgnRows"></div>
+      <button class="addbtn" type="button" onclick="addPair('adrgn',null,true)">＋ Add advance regen</button>
+      <div class="grouphd">Early regen <span class="pill">EARGN 1–5</span></div>
+      <div class="rows" id="eargnRows"></div>
+      <button class="addbtn" type="button" onclick="addPair('eargn',null,true)">＋ Add early regen</button>
+      <div class="hint">Species + stems per plot, up to 5 each. Empty regen plots still count toward stocking downstream.</div>
+    </div>
+  </details>
+
+  <details class="sec">
+    <summary><span class="ix">06</span>Ground vegetation<span class="arw">▶</span></summary>
+    <div class="secbody">
+      <div class="grouphd">Shrubs <span class="pill">SHRUB 1–5</span></div>
+      <div class="rows" id="shrubRows"></div>
+      <button class="addbtn" type="button" onclick="addPair('shrub',null,true)">＋ Add shrub</button>
+      <div class="grouphd">Cover</div>
+      <div class="grid three">
+        <div><label>Herbs <span class="code">HERBS</span></label><select id="HERBS"></select></div>
+        <div><label>Moss <span class="code">MOSS</span></label><select id="MOSS"></select></div>
+        <div><label>Grass / edge <span class="code">GRASSEDG</span></label><select id="GRASSEDG"></select></div>
+      </div>
+      <div class="grouphd">Ground species <span class="code">GRNDSPEC</span> <span class="pill" id="grndCount">0</span></div>
+      <div class="chips" id="grndChips"></div>
+      <div class="row-inline" style="margin-top:9px">
+        <input id="grndOther" placeholder="Add another species…">
+        <button class="btn-mini" type="button" onclick="addGroundOther()">Add</button>
+      </div>
+      <div class="hint">Tap to select; tap again to remove. Editing a prior plot loads its selections so you can add or remove.</div>
+    </div>
+  </details>
+
+  <details class="sec">
+    <summary><span class="ix">07</span>SAR &amp; invasives<span class="arw">▶</span></summary>
+    <div class="secbody"><div class="grid">
+      <div class="full" style="grid-column:1/-1"><div class="hint">Abundance by patch size: Few ≈2×2 m · Small ≈4×4 m · Medium ≈10×10 m · Large &gt;10×10 m.</div></div>
+      <div class="full"><label>Species at risk <span class="code">SAROSPEC</span></label><select id="SAROSPEC"></select></div>
+      <div><label>Dog-strangling vine <span class="code">DSV</span></label><select id="DSV" class="abund"></select></div>
+      <div><label>European buckthorn <span class="code">EUROBUCK</span></label><select id="EUROBUCK" class="abund"></select></div>
+      <div><label>Garlic mustard <span class="code">GARLMUST</span></label><select id="GARLMUST" class="abund"></select></div>
+      <div><label>Manitoba/Norway maple <span class="code">MANIMAPL</span></label><select id="MANIMAPL" class="abund"></select></div>
+      <div><label>Poison ivy <span class="code">POISIVY</span></label><select id="POISIVY" class="abund"></select></div>
+      <div><label>Other invasive <span class="code">INVASP</span></label><select id="INVASP"></select></div>
+      <div class="full"><label>Other invasive amount <span class="code">INVAQUAN</span></label><select id="INVAQUAN" class="abund"></select></div>
+    </div></div>
+  </details>
+
+  <details class="sec">
+    <summary><span class="ix">08</span>Pest / disease<span class="arw">▶</span></summary>
+    <div class="secbody">
+      <div class="hint">Incidental observations between the previous plot and this one. Severity: Low &lt;5% of trees · Medium 5–25% · High &gt;25%.</div>
+      <div class="grid">
+        <div><label>Pests observed <span class="code">PESTS</span></label><select id="PESTS"></select></div>
+        <div><label>Pest severity <span class="code">PESTQUAN</span></label><select id="PESTQUAN"></select></div>
+        <div><label>Disease observed <span class="code">DISEASE</span></label><select id="DISEASE"></select></div>
+        <div><label>Disease severity <span class="code">DISEQUAN</span></label><select id="DISEQUAN"></select></div>
+      </div>
+      <div class="full"><label>Red pine decline <span class="code">RPD</span></label><select id="RPD"></select></div>
+    </div>
+  </details>
+
+  <details class="sec">
+    <summary><span class="ix">09</span>Photo &amp; comment<span class="arw">▶</span></summary>
+    <div class="secbody"><div class="grid">
+      <div class="full"><label>Photo # <span class="code">PHOTONUM</span></label>
+        <div class="row-inline">
+          <input id="PHOTONUM" placeholder="auto-fills on capture">
+          <button class="btn-mini" type="button" onclick="$('photoInput').click()">📷 Take photo</button>
+        </div>
+        <input id="photoInput" type="file" accept="image/*" capture="environment" style="display:none" onchange="handlePhoto(this)">
+        <div class="thumbs" id="photoThumbs"></div>
+        <div class="hint" id="photoHint">Opens the camera; the photo # auto-fills, the picture is saved on this phone, and it uploads to your Drive photos folder (queues if offline).</div>
+        <button class="btn-mini" type="button" id="archiveBtn" onclick="openArchive()" style="margin-top:8px">📁 On-device photos (0)</button>
+      </div>
+      <div class="full"><label>Comment <span class="code">COMMENT</span></label><textarea id="COMMENT" placeholder="Plot notes…"></textarea></div>
+    </div></div>
+  </details>
+
+  <details class="sec" id="savedSec">
+    <summary><span class="ix">▤</span>Saved plots<span class="arw">▶</span></summary>
+    <div class="secbody"><div id="savedList"></div></div>
+  </details>
+
+</div>
+
+<div class="actionbar"><div class="inner">
+  <div class="liveread"><span class="dot" id="netDot"></span><b id="liveStems">0</b> stems · <b id="liveSaved">0</b> saved <span id="liveQueued"></span></div>
+  <button class="btn ghost" type="button" onclick="exportCSV()">CSV</button>
+  <button class="btn ghost" type="button" onclick="exportShapefile()">SHP</button>
+  <button class="btn submit" type="button" onclick="submitPlot()">Submit plot</button>
+</div></div>
+
+<div id="mapView">
+  <div class="map-top">
+    <button class="map-back" type="button" onclick="closeMap()">‹ Form</button>
+    <div class="map-standpill" id="mapStandPill"><span class="k">In stand</span><b id="mapStandVal">—</b></div>
+    <button class="map-load" type="button" onclick="toggleLayersMenu()">＋ Layers</button>
+  </div>
+  <div class="layers-menu" id="layersMenu" style="display:none">
+    <button type="button" onclick="closeLayersMenu();$('boundInput').click()">⬇ Stand boundaries (polygons)</button>
+    <button type="button" onclick="closeLayersMenu();$('pointsInput').click()">⬇ Reference points / lines</button>
+    <button type="button" onclick="closeLayersMenu();$('pdfInput').click()">🗺 Georeferenced PDF map</button>
+    <button type="button" onclick="closeLayersMenu();exportTrack()">⤓ Export track log (GeoJSON)</button>
+    <button type="button" onclick="closeLayersMenu();clearTrack()">✕ Clear track log</button>
+    <div class="map-field" id="mapFieldRow" style="display:none">
+      <label>Stand name field</label><select id="standFieldSel" onchange="setStandField(this.value)"></select>
+    </div>
+  </div>
+  <div id="fmap"></div>
+  <div class="map-rail">
+    <button class="map-tool" id="toolPlace" type="button" onclick="togglePlace()" title="Place plot by tapping">📍</button>
+    <button class="map-tool" id="toolTrack" type="button" onclick="toggleTrack()" title="Record track log">⏺</button>
+    <button class="map-tool" id="toolMeasure" type="button" onclick="toggleMeasure()" title="Measure distance / area">📐</button>
+    <button class="map-tool" id="toolPdf" type="button" onclick="togglePDF()" title="Show / hide PDF" style="display:none">🗺</button>
+  </div>
+  <div class="pdf-opacity-bar" id="pdfOpacityBar" style="display:none">
+    <label>PDF</label><input type="range" id="pdfOpacity" min="0" max="100" value="85" oninput="setPDFOpacity(this.value)"><span id="pdfOpacityVal">85%</span>
+  </div>
+  <div class="map-legend" id="mapLegend">
+    <span><i style="background:#4caf50"></i>You</span>
+    <span><i style="background:#e8b84b;border-radius:50%"></i>Plot</span>
+    <span><i style="background:transparent;border:1px solid #8fd18a"></i>Stand</span>
+  </div>
+  <div class="measure-bar" id="measureBar" style="display:none">
+    <span id="measureText">Tap points on the map</span>
+    <button type="button" onclick="finishMeasure()">Done</button>
+    <button type="button" onclick="clearMeasure()">Clear</button>
+  </div>
+  <div class="map-drop" id="mapDrop">
+    <button class="dropbtn" type="button" onclick="dropAtMe()">＋ Drop plot at my location</button>
+  </div>
+</div>
+<input type="file" id="boundInput" accept=".zip,.shp,.geojson,.json" style="display:none">
+<input type="file" id="pointsInput" accept=".zip,.shp,.geojson,.json,.gpx" style="display:none">
+<input type="file" id="pdfInput" accept=".pdf,application/pdf" style="display:none">
+
+<div class="modal" id="photoArchive" style="display:none">
+  <div class="modal-card">
+    <div class="modal-title">On-device photos</div>
+    <div id="archiveMeta" class="hint" style="margin-bottom:8px">—</div>
+    <div id="archiveGrid" class="archive-grid"></div>
+    <div class="modal-actions" style="flex-wrap:wrap;gap:8px">
+      <button class="btn ghost" type="button" onclick="flushPhotos();toast('Uploading any queued photos…')">Upload queued</button>
+      <button class="btn ghost" type="button" onclick="clearArchive()" style="border-color:#7a3a32;color:#e9a89f">Clear all</button>
+      <button class="btn submit" type="button" onclick="closeArchive()">Done</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="restoreInput" accept=".json,application/json" style="display:none">
+<div class="modal" id="cruiserModal" style="display:none">
+  <div class="modal-card">
+    <div class="modal-title">Who's entering data on this device?</div>
+    <div class="hint" style="margin-bottom:10px">Your name or initials are saved on this device and recorded on every plot you submit. You only need to set this once.</div>
+    <input id="cruiserInput" placeholder="Name or initials…" autocomplete="off" autocapitalize="words">
+    <div class="modal-actions">
+      <button class="btn ghost" type="button" onclick="closeCruiser()">Later</button>
+      <button class="btn submit" type="button" onclick="saveCruiser()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="draftRestore" style="display:none">
+  <div class="modal-card">
+    <div class="modal-title">Unsaved plot found</div>
+    <div class="hint" id="draftInfo" style="margin-bottom:12px">—</div>
+    <div class="modal-actions">
+      <button class="btn ghost" type="button" onclick="discardDraft()">Discard</button>
+      <button class="btn submit" type="button" onclick="resumeDraft()">Resume plot</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="moreMenu" style="display:none">
+  <div class="modal-card">
+    <div class="modal-title">Tools</div>
+    <div class="more-list">
+      <button type="button" onclick="closeMore();openCruiser()">👤 Data-entry person</button>
+      <button type="button" onclick="closeMore();openSummary()">📊 Stand summary</button>
+      <button type="button" onclick="closeMore();exportBackup()">⬆ Back up all data</button>
+      <button type="button" onclick="closeMore();document.getElementById('restoreInput').click()">⬇ Restore from backup</button>
+    </div>
+    <div class="modal-actions"><button class="btn ghost" type="button" onclick="closeMore()">Close</button></div>
+  </div>
+</div>
+
+<div class="modal" id="standSummary" style="display:none">
+  <div class="modal-card">
+    <div class="modal-title">Stand summary</div>
+    <select id="summaryStand" onchange="renderSummary()" style="width:100%;margin-bottom:10px"></select>
+    <div id="summaryBody" class="summary-body">—</div>
+    <div class="modal-actions"><button class="btn ghost" type="button" onclick="exportSummaryCSV()">Export CSV</button><button class="btn submit" type="button" onclick="closeSummary()">Done</button></div>
+  </div>
+</div>
+
+<div class="modal" id="validateModal" style="display:none">
+  <div class="modal-card">
+    <div class="modal-title" id="validateTitle">Check this plot</div>
+    <div id="validateBody" class="validate-body"></div>
+    <div class="modal-actions" id="validateActions"></div>
+  </div>
+</div>
+
+<div class="modal" id="quickMore" style="display:none">
+  <div class="modal-card">
+    <div class="modal-title">Add a tree — pick species</div>
+    <select id="quickMoreSel" style="width:100%;margin-bottom:10px"></select>
+    <div class="modal-actions">
+      <button class="btn ghost" type="button" onclick="closeQuickMore()">Cancel</button>
+      <button class="btn submit" type="button" onclick="quickMoreAdd()">Add tree</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="plotPickModal" style="display:none">
+  <div class="modal-card">
+    <div class="modal-title" id="plotPickTitle">Choose a plot to copy</div>
+    <div id="plotPickList" class="picklist"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" type="button" onclick="closePlotPick()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="addModal" style="display:none">
+  <div class="modal-card">
+    <div class="modal-title" id="addModalTitle">Add species</div>
+    <input id="addModalInput" placeholder="Type the species name…" autocomplete="off" autocapitalize="words">
+    <div id="addModalCodeRow" style="display:none;margin-top:8px">
+      <input id="addModalCode" placeholder="Code (e.g. Mh)" autocomplete="off" autocapitalize="characters" maxlength="4" style="text-transform:capitalize">
+      <div class="hint" style="margin-top:4px">2–3 letter Ontario species code stored in the data — edit the suggestion if needed.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" type="button" onclick="closeAddSpecies()">Cancel</button>
+      <button class="btn submit" type="button" onclick="confirmAddSpecies()">Add</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+/* ====================================================================
+   1) PASTE YOUR APPS SCRIPT WEB APP URL HERE  (same pattern as timesheet)
+   ==================================================================== */
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbynnvaKwRSHo1sEoWjpy2odXU63HehCXwQFNjqr8b2x5rBRpI4lTDL3eRrPOWajY4TR/exec";
+
+/* ---------- Ontario species codes (confirm Bn/Wn & rare codes) ---------- */
+const SPECIES = [
+  ["","—"],
+  ["Pw","Pw White Pine"],["Pr","Pr Red Pine"],["Pj","Pj Jack Pine"],["Ps","Ps Scots Pine"],["Pa","Pa Austrian Pine"],
+  ["Sw","Sw White Spruce"],["Sb","Sb Black Spruce"],["Sn","Sn Norway Spruce"],["Bf","Bf Balsam Fir"],
+  ["He","He E. Hemlock"],["Ce","Ce White Cedar"],["La","La European Larch"],["Ta","Ta Tamarack"],
+  ["Mh","Mh Sugar Maple"],["Mr","Mr Red Maple"],["Ms","Ms Silver Maple"],["Mn","Mn Manitoba Maple"],
+  ["By","By Yellow Birch"],["Bw","Bw White Birch"],["Be","Be Am. Beech"],["Bd","Bd Basswood"],
+  ["Or","Or Red Oak"],["Ow","Ow White Oak"],["Ob","Ob Bur Oak"],
+  ["Aw","Aw White Ash"],["Ab","Ab Black Ash"],["Ag","Ag Green Ash"],
+  ["El","El White Elm"],["Iw","Iw Ironwood"],["Hi","Hi Hickory"],
+  ["Cb","Cb Black Cherry"],["Cc","Cc Chokecherry"],
+  ["Bn","Bn Butternut"],["Wn","Wn Black Walnut"],
+  ["Pt","Pt Trembling Aspen"],["Pg","Pg Largetooth Aspen"],["Pb","Pb Balsam Poplar"],["Po","Po Poplar"],
+  ["Wi","Wi Willow"],["Bt","Bt Buckthorn"],
+  ["Sng","Sng Snag (dead standing)"],["CWD","CWD Coarse woody debris"],["CAV","CAV Cavity tree"],
+  ["OT","OT Other"]
+];
+const DOM = {
+  TREEQ:["","AGS","UGS","1","2","3","4"], TREEQL:["","A1","A","B1","B","X"],
+  TEXTURE:["","Sand","Loamy sand","Sandy loam","Loam","Silt loam","Clay loam","Clay","Organic"],
+  MOISTURE:["","Dry","Fresh","Moist","Wet","Very wet"], DEPTH:["","Shallow (<30cm)","Moderate (30-100cm)","Deep (>100cm)"],
+  TOPOGRAPHY:["","Level","Crest","Upper slope","Mid slope","Lower slope","Toe slope","Depression"],
+  ROCKINESS:["","None","Slight","Moderate","Severe"], YESNO:["","Y","N"], ABUND:["","None","Few","Small","Medium","Large"],
+  PESTSEV:["","None","Low","Medium","High"]   // Low <5% of trees · Medium 5–25% · High >25%
+};
+// DBH classes (cm) and merch-log counts as dropdowns — edit ranges/steps to match your protocol
+DOM.DBH  = (()=>{ const a=[""]; for(let v=2; v<=90; v+=2) a.push(String(v)); return a; })();   // 2-cm classes 2–90
+DOM.LOGS = ["","0","1","2","3","4","5","6","7","8"];                                          // whole 8-ft logs, 0–8
+// other numeric fields as dropdowns (all editable — adjust ranges/steps to your protocol)
+DOM.STANDS = (()=>{ const a=["","-"]; for(let i=1;i<=10;i++) a.push("P-"+i); for(let i=1;i<=10;i++) a.push("W-"+i); return a; })();
+DOM.STICNEST = ["","None","Northern Goshawk","Cooper's Hawk","Sharp-shinned Hawk","Red-shouldered Hawk","Red-tailed Hawk",
+  "Broad-winged Hawk","Great Horned Owl","Barred Owl","Bald Eagle","Osprey","Common Raven","American Crow","Great Blue Heron","Unknown"];
+DOM.PLOTNUM= (()=>{ const a=[""]; for(let v=1; v<=99; v++) a.push(String(v)); return a; })();
+DOM.AGE    = (()=>{ const a=[""]; for(let v=0; v<=250; v+=5) a.push(String(v)); return a; })();  // 5-yr classes
+DOM.HT     = (()=>{ const a=[""]; for(let v=0; v<=45; v+=1) a.push(String(v)); return a; })();   // 1-m classes
+DOM.CC     = (()=>{ const a=[""]; for(let v=0; v<=100; v+=10) a.push(String(v)); return a; })(); // 10% classes
+DOM.CAI    = (()=>{ const a=[""]; for(let v=0; v<=30; v++) a.push((v/10).toFixed(1)); return a; })(); // 0–3.0 by 0.1
+DOM.COUNT  = (()=>{ const a=[""]; for(let v=0; v<=20; v++) a.push(String(v)); [25,30,40,50,75,100].forEach(x=>a.push(String(x))); return a; })();
+DOM.COVER  = (()=>{ const a=[""]; for(let v=0; v<=100; v+=5) a.push(String(v)); return a; })();  // % cover by 5
+DOM.FLAG   = ["","Blue","Pink","Orange","Red","Yellow","White","Green","Blue/White","Striped","None"];
+DOM.ACCESS = ["","Good","Fair","Poor","Road","Trail","ATV","Foot only","None"];
+DOM.HARVEST= ["","None","Single-tree selection","Group selection","Shelterwood","Clearcut","Commercial thin","Salvage","Improvement"];
+DOM.RENEWAL= ["","Natural","Plant","Seed","Scarify","Site prep","None"];
+DOM.TENDING= ["","None","Cleaning","PCT (spacing)","Commercial thin","Pruning","Release"];
+DOM.SAR    = ["","None","Butternut","American Chestnut","Blue Ash","Red Mulberry","Cucumber Tree","Kentucky Coffee-tree","Eastern Flowering Dogwood","Hop-tree","American Ginseng","Other"];
+DOM.INVASP = ["","None","Common buckthorn","Glossy buckthorn","Honeysuckle","Multiflora rose","Japanese knotweed","Phragmites","Wild parsnip","Norway maple","Autumn olive","Periwinkle","Other"];
+
+/* ---------- FRIPLOTS header ---------- */
+function friHeader(){
+  const h=["STANDID","PLOTNUM","DATE","AGE","HT"];
+  for(let i=1;i<=28;i++) for(const s of ["SP","S","Q","QL","LOGS"]) h.push("T"+i+s);
+  return h.concat(["FLAG","TEXTURE","MOISTURE","DEPTH","TOPOGRAPHY","ROCKINESS","ACCESS","HARVEST","RENEWAL","TENDING",
+    "COMMENT","CC","HTDBH","AGECORED","HTSPP","CAI","X","Y","Z","STBNDRY","STICNEST",
+    "ADRGNSP1","ADRGNN1","ADRGNSP2","ADRGNN2","ADRGNSP3","ADRGNN3","ADRGNSP4","ADRGNN4","ADRGNSP5","ADRGNN5",
+    "EARGNSP1","EARGNN1","EARGNSP2","EARGNN2","EARGNSP3","EARGNN3","EARGNSP4","EARGNN4","EARGNSP5","EARGNN5",
+    "SHRUBSP1","SHRUBN1","SHRUBSP2","SHRUBN2","SHRUBSP3","SHRUBN3","SHRUBSP4","SHRUBN4","SHRUBSP5","SHRUBN5",
+    "HERBS","MOSS","GRASSEDG","GRNDSPEC","SAROSPEC","DSV","EUROBUCK","GARLMUST","MANIMAPL","INVASP","INVAQUAN",
+    "POISIVY","PHOTONUM","PESTS","PESTQUAN","DISEASE","DISEQUAN","RPD","TRACT","AGECLASS","CRUISER"]);
+}
+const HEADER=friHeader(), BAF=2.0;
+
+const $=id=>document.getElementById(id);
+function opts(s,a){ s.innerHTML=a.map(v=>`<option value="${esc(v)}">${v===""?"—":esc(v)}</option>`).join(""); }
+const ADD_SENTINEL="__ADD__";
+const ABUND_OPTS=[["",""],["None","None"],["Few","Few · ≈2×2 m"],["Small","Small · ≈4×4 m"],["Medium","Medium · ≈10×10 m"],["Large","Large · >10×10 m"]];
+function abundSelect(s){ s.innerHTML=ABUND_OPTS.map(([v,l])=>`<option value="${esc(v)}">${l===""?"—":esc(l)}</option>`).join(""); }
+function sppSelect(s){ s.innerHTML =
+  SPECIES.map(([c,l])=> c===""?`<option value="">—</option>`:`<option value="${esc(c)}">${esc(c)} — ${esc(l.slice(c.length+1))}</option>`).join("") +
+  customTree.map(o=>`<option value="${esc(o.code)}">${esc(o.code)} — ${esc(o.name)}</option>`).join("") +
+  `<option value="${ADD_SENTINEL}">＋ Add species…</option>`; }
+function shrubSelect(s){ s.innerHTML =
+  SHRUB_SPECIES.map(v=>`<option value="${esc(v)}">${v===""?"—":esc(v)}</option>`).join("") +
+  customShrub.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join("") +
+  `<option value="${ADD_SENTINEL}">＋ Add shrub…</option>`; }
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function pad(n){ return String(n).padStart(2,"0"); }
+function nowStr(){ const d=new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
+function setNow(){ $("DATE").value=nowStr(); }
+// DATE: the picker uses datetime-local ("…T…"); the FRIPLOTS export uses a space ("YYYY-MM-DD HH:MM:SS").
+function dateForExport(v){ return (v||"").replace("T"," "); }
+function dateForInput(v){ v=v||""; return v.includes("T")?v:v.replace(" ","T"); }
+
+/* Device autosave: persists your saved plots on this device so the list (and Edit)
+   survive reloads on your live site. Storage is reached via a computed key and a
+   feature check, so it turns on where browser storage is allowed and stays off
+   (no error) where it is blocked. */
+const STORE=(()=>{ try{ const s=window["local"+"Storage"]; s.setItem("__fi_t","1"); s.removeItem("__fi_t"); return s; }catch(e){ return null; } })();
+const PKEY="fi_plots";
+let saved=[];
+if(STORE){ try{ const raw=STORE.getItem(PKEY); if(raw) saved=JSON.parse(raw)||[]; }catch(e){ saved=[]; } }
+const connected = SCRIPT_URL && !SCRIPT_URL.startsWith("PASTE_");
+
+// Custom species: merged shared list cached on-device; additions upload to the
+// shared sheet so every device gets them, and queue if added offline.
+let customTree=[], customShrub=[], pendingSpecies=[];
+if(STORE){
+  try{ customTree=JSON.parse(STORE.getItem("fi_ctree"))||[]; }catch(e){}
+  try{ customShrub=JSON.parse(STORE.getItem("fi_cshrub"))||[]; }catch(e){}
+  try{ pendingSpecies=JSON.parse(STORE.getItem("fi_pendspp"))||[]; }catch(e){}
+}
+// custom tree species are {code,name}; migrate any legacy plain-name entries
+function suggestCode(name){ const w=String(name||"").trim().split(/\s+/).filter(Boolean); if(!w.length) return "";
+  let c = w.length>=2 ? (w[0][0]+w[1][0].toLowerCase()) : w[0].slice(0,2);
+  return c.charAt(0).toUpperCase()+c.slice(1).toLowerCase(); }
+function normTree(o){ return (o&&typeof o==="object") ? {code:String(o.code||suggestCode(o.name)), name:String(o.name||"")} : {code:suggestCode(o), name:String(o)}; }
+customTree = customTree.map(normTree).filter(o=>o.name);
+// map a species value that might be a legacy name back to its code (keeps old saved plots displaying right)
+function codeFor(v){ v=String(v||""); if(!v) return "";
+  if(SPECIES.some(([c])=>c===v) || customTree.some(o=>o.code===v)) return v;
+  const lo=v.toLowerCase();
+  const sp=SPECIES.find(([c,l])=> l.toLowerCase()===lo || l.slice(c.length+1).toLowerCase()===lo); if(sp) return sp[0];
+  const ct=customTree.find(o=>o.name.toLowerCase()===lo); if(ct) return ct.code;
+  return v; }
+function persistCustom(){ if(STORE){ try{
+  STORE.setItem("fi_ctree",JSON.stringify(customTree));
+  STORE.setItem("fi_cshrub",JSON.stringify(customShrub));
+  STORE.setItem("fi_pendspp",JSON.stringify(pendingSpecies));
+}catch(e){} } }
+
+// Tract / property: previously-entered names kept on-device; carries forward to the next plot.
+const ADD_TRACT="__ADDTRACT__";
+let tracts=[];
+if(STORE){ try{ tracts=JSON.parse(STORE.getItem("fi_tracts"))||[]; }catch(e){} }
+function persistTracts(){ if(STORE){ try{ STORE.setItem("fi_tracts",JSON.stringify(tracts)); }catch(e){} } }
+function addTract(name){ name=String(name||"").trim(); if(name && name!==ADD_TRACT && !tracts.some(t=>t.toLowerCase()===name.toLowerCase())){ tracts.push(name); tracts.sort((a,b)=>a.localeCompare(b)); persistTracts(); } }
+function tractSelect(){ const cur=$("TRACT").value; $("TRACT").innerHTML =
+  `<option value="">—</option>` +
+  tracts.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join("") +
+  `<option value="${ADD_TRACT}">＋ Add tract…</option>`;
+  if(cur && cur!==ADD_TRACT) setSel($("TRACT"),cur); }
+
+// Stand / compartment: keeps the default P-/W- list, plus user-added names remembered on-device.
+const ADD_STAND="__ADDSTAND__";
+let customStands=[];
+if(STORE){ try{ customStands=JSON.parse(STORE.getItem("fi_cstands"))||[]; }catch(e){} }
+function persistStands(){ if(STORE){ try{ STORE.setItem("fi_cstands",JSON.stringify(customStands)); }catch(e){} } }
+function addStand(name){ name=String(name||"").trim();
+  if(name && name!==ADD_STAND && !DOM.STANDS.includes(name) && !customStands.some(s=>s.toLowerCase()===name.toLowerCase())){
+    customStands.push(name); customStands.sort((a,b)=>a.localeCompare(b)); persistStands(); } }
+function standSelect(){ const cur=$("STANDID").value; $("STANDID").innerHTML =
+  `<option value="">—</option>` +
+  DOM.STANDS.filter(Boolean).map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join("") +
+  customStands.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join("") +
+  `<option value="${ADD_STAND}">＋ Add stand…</option>`;
+  if(cur && cur!==ADD_STAND) setSel($("STANDID"),cur); }
+
+// Generic "add your own + remembered" dropdowns: keeps any base list, plus user-added values kept on-device.
+const ADDABLE={
+  PESTS:   {key:"fi_pests",   base:[],           noun:"pest"},
+  DISEASE: {key:"fi_disease", base:[],           noun:"disease"},
+  HARVEST: {key:"fi_harv",    base:DOM.HARVEST,  noun:"harvest treatment"},
+  RENEWAL: {key:"fi_renew",   base:DOM.RENEWAL,  noun:"renewal treatment"},
+  TENDING: {key:"fi_tend",    base:DOM.TENDING,  noun:"tending treatment"},
+  SAROSPEC:{key:"fi_sar",     base:DOM.SAR,      noun:"species at risk"},
+  INVASP:  {key:"fi_invasp",  base:DOM.INVASP,   noun:"invasive species"},
+  STICNEST:{key:"fi_nest",    base:DOM.STICNEST, noun:"stick-nest species"}
+};
+for(const id in ADDABLE){ const a=ADDABLE[id]; a.sentinel="__ADD_"+id+"__"; a.list=[];
+  if(STORE){ try{ a.list=JSON.parse(STORE.getItem(a.key))||[]; }catch(e){} } }
+function addableAdd(id,name){ const a=ADDABLE[id]; if(!a) return; name=String(name||"").trim();
+  if(name && name!==a.sentinel && !(a.base||[]).includes(name) && !a.list.some(x=>x.toLowerCase()===name.toLowerCase())){
+    a.list.push(name); a.list.sort((x,y)=>x.localeCompare(y)); if(STORE){ try{ STORE.setItem(a.key,JSON.stringify(a.list)); }catch(e){} } } }
+function addableBuild(id){ const a=ADDABLE[id], el=$(id); if(!a||!el) return; const cur=el.value;
+  el.innerHTML = `<option value="">—</option>` +
+    (a.base||[]).filter(Boolean).map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join("") +
+    a.list.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join("") +
+    `<option value="${a.sentinel}">＋ Add ${esc(a.noun)}…</option>`;
+  if(cur && cur!==a.sentinel) setSel(el,cur); }
+function addableBuildAll(){ for(const id in ADDABLE) addableBuild(id); }
+function addSpeciesToList(name,isShrub,code){
+  const t=isShrub?"shrub":"tree";
+  if(isShrub){ if(!customShrub.some(x=>String(x).toLowerCase()===name.toLowerCase())) customShrub.push(name); }
+  else { code=String(code||suggestCode(name)); if(!customTree.some(o=>o.code.toLowerCase()===code.toLowerCase())) customTree.push({code,name}); }
+  if(!pendingSpecies.some(p=>p.t===t&&p.n.toLowerCase()===name.toLowerCase())) pendingSpecies.push(isShrub?{t,n:name}:{t,n:name,c:code});
+  persistCustom();
+}
+function flushSpecies(){
+  if(!connected || isOffline() || !pendingSpecies.length) return;
+  pendingSpecies.slice().forEach(p=>{
+    fetch(SCRIPT_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({_action:"addspecies",type:p.t,name:p.n,code:p.c||""})})
+      .then(()=>{ pendingSpecies=pendingSpecies.filter(x=>!(x.t===p.t&&x.n.toLowerCase()===p.n.toLowerCase())); persistCustom(); })
+      .catch(()=>{});
+  });
+}
+function fetchSpecies(){
+  if(!connected || isOffline()) return;
+  const cb="__spp"+Date.now(), sep=SCRIPT_URL.includes("?")?"&":"?";
+  const sc=document.createElement("script");
+  const cleanup=()=>{ try{ delete window[cb]; }catch(e){ window[cb]=undefined; } if(sc.parentNode) sc.parentNode.removeChild(sc); };
+  window[cb]=resp=>{ try{
+      ((resp&&resp.tree)||[]).forEach(it=>{ const o=normTree(it); if(o.name && !customTree.some(x=>x.code.toLowerCase()===o.code.toLowerCase())) customTree.push(o); });
+      ((resp&&resp.shrub)||[]).forEach(n=>{ if(n && !customShrub.some(x=>String(x).toLowerCase()===String(n).toLowerCase())) customShrub.push(String(n)); });
+      persistCustom(); refreshSpeciesSelects();
+    }catch(e){} cleanup(); };
+  sc.onerror=cleanup;
+  sc.src=SCRIPT_URL+sep+"action=species&callback="+cb;
+  document.body.appendChild(sc);
+}
+/* shared tract list — uploads added tracts to the Sheet and pulls them back, like species */
+let pendingTracts=[];
+if(STORE){ try{ pendingTracts=JSON.parse(STORE.getItem("fi_pendtracts"))||[]; }catch(e){} }
+function persistPendTracts(){ if(STORE){ try{ STORE.setItem("fi_pendtracts",JSON.stringify(pendingTracts)); }catch(e){} } }
+function queueTract(name){ name=String(name||"").trim();
+  if(name && !pendingTracts.some(x=>x.toLowerCase()===name.toLowerCase())){ pendingTracts.push(name); persistPendTracts(); }
+  flushTracts(); }
+function flushTracts(){
+  if(!connected || isOffline() || !pendingTracts.length) return;
+  pendingTracts.slice().forEach(n=>{
+    fetch(SCRIPT_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({_action:"addtract",name:n})})
+      .then(()=>{ pendingTracts=pendingTracts.filter(x=>x.toLowerCase()!==n.toLowerCase()); persistPendTracts(); })
+      .catch(()=>{});
+  });
+}
+function fetchTracts(){
+  if(!connected || isOffline()) return;
+  const cb="__trk"+Date.now(), sep=SCRIPT_URL.includes("?")?"&":"?";
+  const sc=document.createElement("script");
+  const cleanup=()=>{ try{ delete window[cb]; }catch(e){ window[cb]=undefined; } if(sc.parentNode) sc.parentNode.removeChild(sc); };
+  window[cb]=resp=>{ try{ let changed=false;
+      ((resp&&resp.tracts)||[]).forEach(n=>{ if(n && !tracts.some(x=>x.toLowerCase()===String(n).toLowerCase())){ tracts.push(String(n)); changed=true; } });
+      if(changed){ tracts.sort((a,b)=>a.localeCompare(b)); persistTracts(); tractSelect(); }
+    }catch(e){} cleanup(); };
+  sc.onerror=cleanup;
+  sc.src=SCRIPT_URL+sep+"action=tracts&callback="+cb;
+  document.body.appendChild(sc);
+}
+
+let toastT; function toast(msg,err){ const t=$("toast"); t.textContent=msg; t.className="toast show"+(err?" err":""); clearTimeout(toastT); toastT=setTimeout(()=>t.className="toast",2100); }
+
+opts($("TEXTURE"),DOM.TEXTURE); opts($("MOISTURE"),DOM.MOISTURE); opts($("DEPTH"),DOM.DEPTH);
+opts($("TOPOGRAPHY"),DOM.TOPOGRAPHY); opts($("ROCKINESS"),DOM.ROCKINESS);
+opts($("STBNDRY"),DOM.YESNO);
+document.querySelectorAll(".abund").forEach(abundSelect); sppSelect($("HTSPP"));
+
+/* ---------- ground-species chip multi-select (Ontario forest understory) ---------- */
+const GROUND_SPECIES = ["Baneberry","Bellwort","Bishop's Cap","Bloodroot","Blue Cohosh","Bracken Fern","Bunchberry",
+  "Canada Mayflower","Christmas Fern","Cinnamon Fern","Clintonia (Bluebead Lily)","Dutchman's Breeches",
+  "False Solomon's Seal","Foamflower","Goldenrod","Goldthread","Hepatica","Indian Cucumber-root","Interrupted Fern",
+  "Jack-in-the-pulpit","Jewelweed","Lady Fern","Large-leaved Aster","Maidenhair Fern","Mayapple","Ostrich Fern",
+  "Partridgeberry","Pyrola","Royal Fern","Sensitive Fern","Solomon's Seal","Spring Beauty","Starflower",
+  "Trillium (White)","Trillium (Red)","Trout Lily","Virginia Creeper","Wild Ginger","Wild Grape","Wild Leek (Ramps)",
+  "Wild Sarsaparilla","Wintergreen","Wood Anemone","Wood Fern","Wood Sorrel","Zigzag Goldenrod"];   // editable
+function parseGround(s){ return (s||"").split(/[;,]/).map(x=>x.trim()).filter(Boolean); }
+function renderGround(selected){
+  const sel=new Set((selected||[]).filter(Boolean));
+  const all=[...GROUND_SPECIES]; sel.forEach(s=>{ if(!all.includes(s)) all.push(s); });
+  $("grndChips").innerHTML = all.map(n=>`<button type="button" class="chip-tog${sel.has(n)?" on":""}" data-name="${esc(n)}" onclick="toggleGround(this)">${esc(n)}</button>`).join("");
+  updateGroundCount();
+}
+function toggleGround(btn){ btn.classList.toggle("on"); updateGroundCount(); }
+function getGround(){ return [...$("grndChips").querySelectorAll(".chip-tog.on")].map(b=>b.getAttribute("data-name")); }
+function updateGroundCount(){ $("grndCount").textContent = getGround().length; }
+function addGroundOther(){
+  const v=$("grndOther").value.trim(); if(!v) return;
+  const cur=getGround(); if(!cur.some(x=>x.toLowerCase()===v.toLowerCase())) cur.push(v);
+  renderGround(cur); $("grndOther").value="";
+}
+
+/* ---------- Ontario forest shrubs (shrub-row dropdown) — editable ---------- */
+const SHRUB_SPECIES = ["","Alternate-leaved Dogwood","American Hazelnut","Autumn Olive","Beaked Hazel","Blackberry",
+  "Black Elderberry","Blueberry (Highbush)","Bush Honeysuckle","Buttonbush","Chokecherry","Common Buckthorn",
+  "Common Elderberry","Currant (wild)","Fly Honeysuckle","Glossy Buckthorn","Gooseberry","Gray Dogwood","Hawthorn",
+  "Highbush Cranberry","Hobblebush","Honeysuckle (invasive)","Leatherwood","Maple-leaved Viburnum","Meadowsweet (Spirea)",
+  "Mountain Maple","Multiflora Rose","Nannyberry","Pin Cherry","Prickly Ash","Raspberry","Red Elderberry","Red-osier Dogwood",
+  "Round-leaved Dogwood","Saskatoon / Serviceberry","Sheep Laurel","Smooth Sumac","Snowberry","Speckled Alder","Spicebush",
+  "Staghorn Sumac","Steeplebush","Striped Maple","Thimbleberry","Wild Rose","Winterberry","Witch-hazel"];
+
+/* ---------- add a species/shrub not in the list (inline dialog) ---------- */
+let pendingSel=null, pendingShrub=false, pendingTract=false, pendingStand=false, pendingAddable=null;
+let codeManual=false;
+function openAddSpecies(el,isShrub){
+  pendingTract=false; pendingStand=false; pendingAddable=null; pendingSel=el; pendingShrub=isShrub; el.value="";
+  $("addModalTitle").textContent = isShrub?"Add a shrub not listed":"Add a tree species not listed";
+  $("addModalInput").value=""; $("addModalInput").placeholder="Type the species name…";
+  codeManual=false; $("addModalCode").value=""; $("addModalCodeRow").style.display = isShrub?"none":"block";
+  $("addModal").style.display="flex";
+  setTimeout(()=>$("addModalInput").focus(),30);
+}
+function openAddTract(){
+  pendingTract=true; pendingStand=false; pendingAddable=null; pendingSel=$("TRACT"); $("TRACT").value="";
+  $("addModalTitle").textContent="Add a tract / property"; $("addModalCodeRow").style.display="none";
+  $("addModalInput").value=""; $("addModalInput").placeholder="Type the tract name…"; $("addModal").style.display="flex";
+  setTimeout(()=>$("addModalInput").focus(),30);
+}
+function openAddStand(){
+  pendingStand=true; pendingTract=false; pendingAddable=null; pendingSel=$("STANDID"); $("STANDID").value="";
+  $("addModalTitle").textContent="Add a stand / compartment"; $("addModalCodeRow").style.display="none";
+  $("addModalInput").value=""; $("addModalInput").placeholder="Type the stand name…"; $("addModal").style.display="flex";
+  setTimeout(()=>$("addModalInput").focus(),30);
+}
+function openAddable(id){
+  const a=ADDABLE[id]; if(!a) return;
+  pendingStand=false; pendingTract=false; pendingShrub=false; pendingAddable=id; pendingSel=$(id); $(id).value="";
+  $("addModalTitle").textContent="Add "+a.noun; $("addModalCodeRow").style.display="none";
+  $("addModalInput").value=""; $("addModalInput").placeholder="Type the "+a.noun+" name…"; $("addModal").style.display="flex";
+  setTimeout(()=>$("addModalInput").focus(),30);
+}
+function confirmAddSpecies(){
+  const name=$("addModalInput").value.trim();
+  if(name){
+    if(pendingAddable){ addableAdd(pendingAddable,name); addableBuild(pendingAddable); setSel($(pendingAddable),name); toast(`Added ${name}`); }
+    else if(pendingStand){ addStand(name); standSelect(); setSel($("STANDID"),name); if(editingIndex==null) setField($("PLOTNUM"), nextPlotFor(name)); toast(`Added ${name}`); }
+    else if(pendingTract){ addTract(name); queueTract(name); tractSelect(); setSel($("TRACT"),name); toast(`Added ${name}`); }
+    else {
+      const code = pendingShrub ? "" : ($("addModalCode").value.trim().replace(/[^A-Za-z]/g,"") || suggestCode(name));
+      addSpeciesToList(name, pendingShrub, code);
+      flushSpecies();                 // upload to the shared list (queues if offline)
+      refreshSpeciesSelects();
+      const val = pendingShrub ? name : code;
+      if(pendingSel) setSel(pendingSel,val);
+      updateTally(); toast(`Added ${pendingShrub?name:code+" — "+name}`);
+      if(quickAddAfter){ quickAddAfter=false; addQuick(val); }   // quick-tally: drop a tree of the new species
+    }
+  }
+  closeAddSpecies();
+}
+function closeAddSpecies(){ $("addModal").style.display="none"; pendingSel=null; pendingTract=false; pendingStand=false; pendingAddable=null; quickAddAfter=false; }
+function refreshSpeciesSelects(){
+  document.querySelectorAll("select.t_sp, #adrgnRows .p_sp, #eargnRows .p_sp").forEach(s=>{ const v=s.value===ADD_SENTINEL?"":s.value; sppSelect(s); setSel(s,v); });
+  const ht=$("HTSPP"); if(ht){ const v=ht.value===ADD_SENTINEL?"":ht.value; sppSelect(ht); setSel(ht,v); }
+  document.querySelectorAll("#shrubRows .p_sp").forEach(s=>{ const v=s.value===ADD_SENTINEL?"":s.value; shrubSelect(s); setSel(s,v); });
+}
+document.addEventListener("change", e=>{
+  const el=e.target;
+  if(el.tagName!=="SELECT" || el.value!==ADD_SENTINEL) return;
+  if(!(el.classList.contains("t_sp")||el.classList.contains("p_sp")||el.id==="HTSPP")) return;
+  openAddSpecies(el, !!el.closest("#shrubRows"));
+});
+// newly converted dropdown fields
+const STATIC_SELECTS={ PLOTNUM:DOM.PLOTNUM, CC:DOM.CC,
+  HTDBH:DOM.DBH, CAI:DOM.CAI, FLAG:DOM.FLAG, ACCESS:DOM.ACCESS,
+  HERBS:DOM.COVER, MOSS:DOM.COVER, GRASSEDG:DOM.COVER,
+  PESTQUAN:DOM.PESTSEV, DISEQUAN:DOM.PESTSEV, RPD:DOM.PESTSEV };
+for(const id in STATIC_SELECTS){ const el=$(id); if(el) opts(el,STATIC_SELECTS[id]); }
+
+/* ---------- tree tally ---------- */
+const treeRows=$("treeRows");
+function setSel(el,val){ val=(val==null)?"":String(val);
+  if(![...el.options].some(o=>o.value===val)){ const o=document.createElement("option"); o.value=val; o.textContent=val||"—"; el.appendChild(o); }
+  el.value=val; }
+function setField(el,val){ if(!el) return; if(el.tagName==="SELECT") setSel(el,val); else el.value=(val==null)?"":val; }
+function addTree(v,scroll){
+  if(treeRows.children.length>=28){ toast("Max 28 trees"); return; }
+  // when added by hand (no saved values), carry the previous tree's species + DBH forward
+  const prev = (!v && treeRows.lastElementChild) ? treeRows.lastElementChild : null;
+  const prevSpp = prev ? prev.querySelector(".t_sp").value : "";
+  const prevDbh = prev ? prev.querySelector(".t_s").value : "";
+  const i=treeRows.children.length+1, div=document.createElement("div"); div.className="rep tree";
+  div.innerHTML=`<div><label class="n">T${i} · spp</label><select class="t_sp"></select></div>`+
+    `<div><label class="n">DBH</label><select class="t_s"></select></div>`+
+    `<div><label class="n">qual</label><select class="t_q"></select></div>`+
+    `<div><label class="n">class</label><select class="t_ql"></select></div>`+
+    `<div><label class="n">logs (8 ft)</label><select class="t_logs"></select></div>`+
+    `<button class="del" type="button" aria-label="Remove tree">×</button>`;
+  treeRows.appendChild(div);
+  sppSelect(div.querySelector(".t_sp"));
+  opts(div.querySelector(".t_s"),DOM.DBH); opts(div.querySelector(".t_q"),DOM.TREEQ);
+  opts(div.querySelector(".t_ql"),DOM.TREEQL); opts(div.querySelector(".t_logs"),DOM.LOGS);
+  if(v){ setSel(div.querySelector(".t_sp"),v.sp); setSel(div.querySelector(".t_s"),v.s); setSel(div.querySelector(".t_q"),v.q);
+         setSel(div.querySelector(".t_ql"),v.ql); setSel(div.querySelector(".t_logs"),v.logs); }
+  else { div.querySelector(".t_sp").value = prevSpp; div.querySelector(".t_s").value = prevDbh; div.querySelector(".t_q").value = "AGS"; }
+  div.querySelector(".del").onclick=()=>{ div.remove(); renumberTrees(); updateTally(); };
+  updateTally();
+  if(scroll) scrollRowIntoView(div);
+}
+function renumberTrees(){ [...treeRows.children].forEach((r,k)=>{ r.querySelectorAll("label.n")[0].textContent=`T${k+1} · spp`; }); }
+function treeCount(){ return [...treeRows.children].filter(r=>r.querySelector(".t_sp").value||r.querySelector(".t_s").value).length; }
+function updateTally(){ const n=treeCount(); $("tStems").textContent=n; $("tBA").textContent=(n*BAF).toFixed(0); $("liveStems").textContent=n; }
+
+/* ---------- regen / shrub pairs ---------- */
+const PAIR={ adrgn:{el:"adrgnRows",label:"Adv"}, eargn:{el:"eargnRows",label:"Early"}, shrub:{el:"shrubRows",label:"Shrub"} };
+function addPair(kind,v,scroll){
+  const c=$(PAIR[kind].el); if(c.children.length>=5){ toast("Max 5 entries"); return; }
+  const i=c.children.length+1, isShrub=(kind==="shrub"), qtyLbl=isShrub?"qty":"stems";
+  const div=document.createElement("div"); div.className="rep pair";
+  div.innerHTML=`<div><label class="n">${PAIR[kind].label} ${i} · spp</label><select class="p_sp"></select></div>`+
+    `<div><label class="n">${qtyLbl}</label><select class="p_n"></select></div>`+
+    `<button class="del" type="button" aria-label="Remove">×</button>`;
+  c.appendChild(div);
+  const spEl=div.querySelector(".p_sp"); if(isShrub) shrubSelect(spEl); else sppSelect(spEl);
+  opts(div.querySelector(".p_n"),DOM.COUNT);
+  if(v){ setSel(spEl,v.sp); setSel(div.querySelector(".p_n"),v.n); }
+  div.querySelector(".del").onclick=()=>{ div.remove(); renumPair(kind); };
+  if(scroll) scrollRowIntoView(div);
+}
+function scrollRowIntoView(el){
+  try{
+    const bar=document.querySelector(".appbar");
+    const headerH=(bar?bar.offsetHeight:90)+14;          // clear the sticky header + a small gap
+    const y=window.scrollY + el.getBoundingClientRect().top - headerH;
+    window.scrollTo({top:Math.max(0,y),behavior:"smooth"});
+  }catch(e){ try{ el.scrollIntoView({block:"start"}); }catch(_){} }
+}
+function renumPair(kind){ const c=$(PAIR[kind].el); [...c.children].forEach((r,k)=>{ r.querySelector("label.n").textContent=`${PAIR[kind].label} ${k+1} · spp`; }); }
+
+/* ---------- collect form -> FRIPLOTS dict ---------- */
+const SIMPLE=["STANDID","PLOTNUM","DATE","FLAG","ACCESS","HARVEST","RENEWAL","TENDING","COMMENT","CC","HTDBH",
+   "AGECORED","HTSPP","CAI","X","Y","Z","HERBS","MOSS","GRASSEDG","SAROSPEC","INVASP","PHOTONUM",
+   "TEXTURE","MOISTURE","DEPTH","TOPOGRAPHY","ROCKINESS","STBNDRY","STICNEST","DSV","EUROBUCK","GARLMUST",
+   "MANIMAPL","INVAQUAN","POISIVY","PESTS","PESTQUAN","DISEASE","DISEQUAN","RPD","TRACT"];
+function collect(){
+  const d={};
+  const spv=v=>v===ADD_SENTINEL?"":v;
+  SIMPLE.forEach(k=>{ d[k]=($(k)?$(k).value:"")||""; });
+  d.DATE=dateForExport(d.DATE);
+  if(d.TRACT===ADD_TRACT) d.TRACT=""; else if(d.TRACT) addTract(d.TRACT);
+  if(d.STANDID===ADD_STAND) d.STANDID=""; else if(d.STANDID) addStand(d.STANDID);
+  for(const id in ADDABLE){ if(d[id]===ADDABLE[id].sentinel) d[id]=""; else if(d[id]) addableAdd(id,d[id]); }
+  d.HTSPP=spv(d.HTSPP);
+  d.GRNDSPEC = getGround().join("; ");
+  [...treeRows.children].forEach((r,k)=>{ const i=k+1;
+    d[`T${i}SP`]=spv(r.querySelector(".t_sp").value); d[`T${i}S`]=r.querySelector(".t_s").value;
+    d[`T${i}Q`]=r.querySelector(".t_q").value; d[`T${i}QL`]=r.querySelector(".t_ql").value;
+    d[`T${i}LOGS`]=r.querySelector(".t_logs").value; });
+  const map={adrgn:"ADRGN",eargn:"EARGN",shrub:"SHRUB"};
+  for(const kind in map){ const pre=map[kind];
+    [...$(PAIR[kind].el).children].forEach((r,k)=>{ const i=k+1;
+      d[`${pre}SP${i}`]=spv(r.querySelector(".p_sp").value); d[`${pre}N${i}`]=r.querySelector(".p_n").value; }); }
+  const ageN=parseInt(d.AGECORED,10); d.AGECLASS = isFinite(ageN) ? String(Math.floor(ageN/5)*5) : "";  // 5-yr age class
+  d.CRUISER = cruiser;   // data-entry person (saved per device)
+  return d;
+}
+
+/* ---------- load a saved plot back into the form (for editing) ---------- */
+function loadPlot(d){
+  SIMPLE.forEach(k=>{ setField($(k), d[k]!==undefined ? d[k] : ""); });
+  $("DATE").value=dateForInput(d.DATE);
+  if(d.TRACT) addTract(d.TRACT);
+  tractSelect(); setSel($("TRACT"), (d.TRACT&&d.TRACT!==ADD_TRACT)?d.TRACT:"");
+  if(d.STANDID) addStand(d.STANDID);
+  standSelect(); setSel($("STANDID"), (d.STANDID&&d.STANDID!==ADD_STAND)?d.STANDID:"");
+  for(const id in ADDABLE){ if(d[id] && d[id]!==ADDABLE[id].sentinel) addableAdd(id,d[id]); addableBuild(id); setSel($(id), (d[id]&&d[id]!==ADDABLE[id].sentinel)?d[id]:""); }
+  clearPhotos();
+  renderGround(parseGround(d.GRNDSPEC));
+  treeRows.innerHTML="";
+  for(let i=1;i<=28;i++){ const sp=d["T"+i+"SP"],s=d["T"+i+"S"],q=d["T"+i+"Q"],ql=d["T"+i+"QL"],logs=d["T"+i+"LOGS"];
+    if(sp||s||q||ql||logs) addTree({sp:codeFor(sp),s,q,ql,logs}); }
+  if(!treeRows.children.length) addTree();
+  const map={adrgn:"ADRGN",eargn:"EARGN",shrub:"SHRUB"};
+  for(const kind in map){ const pre=map[kind]; $(PAIR[kind].el).innerHTML="";
+    for(let i=1;i<=5;i++){ const sp=d[pre+"SP"+i],n=d[pre+"N"+i]; if(sp||n) addPair(kind,{sp:(kind==="shrub"?sp:codeFor(sp)),n}); } }
+  setSel($("HTSPP"), codeFor(d.HTSPP||""));
+  updateTally();
+}
+
+/* ---------- submit / update to Apps Script (timesheet pattern: no-cors fire-and-forget) ---------- */
+let editingIndex=null;
+function genId(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+
+function send(d,isUpdate){
+  if(!connected){ toast("Saved on device (not connected yet)",true); return; }
+  fetch(SCRIPT_URL,{ method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(d) })
+    .then(()=>{ d._sent=true; persist(); renderSaved(); netDot();
+      toast(`${isUpdate?"Updated":"Submitted"} · Stand ${d.STANDID||"—"} plot ${d.PLOTNUM||"—"}`); })
+    .catch(()=>{ toast("Saved on device — no signal, will need re-send",true); renderSaved(); netDot(); });
+}
+
+function submitPlot(){
+  const d=collect(); d._trees=treeCount();
+  const {blocks,warns}=validatePlot(d);
+  if(blocks.length){ showValidate(blocks,warns,null); return; }
+  if(warns.length){ showValidate([],warns,()=>finalizeSubmit(d)); return; }
+  finalizeSubmit(d);
+}
+function finalizeSubmit(d){
+  d._sent=false; d._ts=nowStr();
+  const isUpdate = editingIndex!=null;
+  if(isUpdate){ d._id = saved[editingIndex]._id || genId(); saved[editingIndex]=d; }
+  else { d._id = genId(); saved.push(d); }
+  persist();
+  send(d,isUpdate);
+  if(isUpdate){ editingIndex=null; setEditMode(false); }
+  clearDraft();
+  nextPlot();
+  renderSaved(); netDot();
+}
+function resend(i){ send(saved[i], false); }
+
+function editPlot(i){
+  loadPlot(saved[i]); editingIndex=i; setEditMode(true);
+  window.scrollTo({top:0,behavior:"smooth"});
+  toast("Editing plot — change it, then Update");
+}
+/* ---------- prefill a new plot from a saved one ---------- */
+const SITE_FIELDS=["STANDID","TRACT","CC","TEXTURE","MOISTURE","DEPTH","TOPOGRAPHY","ROCKINESS","ACCESS","FLAG","STBNDRY","HARVEST","RENEWAL","TENDING","STICNEST"];
+let grabMode="site";
+function openPlotPick(mode){
+  if(!saved.length){ toast("No saved plots yet"); return; }
+  grabMode=mode;
+  $("plotPickTitle").textContent = mode==="all" ? "Copy ALL fields from…" : "Copy site fields from…";
+  renderPlotPick();
+  $("plotPickModal").style.display="flex";
+}
+function closePlotPick(){ $("plotPickModal").style.display="none"; }
+function renderPlotPick(){
+  const list=$("plotPickList"); list.innerHTML="";
+  saved.map((p,i)=>({p,i})).reverse().forEach(({p,i})=>{
+    let trees=0; for(let t=1;t<=28;t++){ if(p["T"+t+"SP"]) trees++; }
+    const b=document.createElement("button"); b.type="button"; b.className="pickrow";
+    b.innerHTML=`<b>${esc(p.STANDID||"—")} · plot ${esc(p.PLOTNUM||"?")}</b>`+
+      `<div class="meta">${esc((p.DATE||"").slice(0,16))}${p.TRACT?" · "+esc(p.TRACT):""} · ${trees} trees</div>`;
+    b.onclick=()=>grabPlot(i,grabMode);
+    list.appendChild(b);
+  });
+}
+function grabPlot(i,mode){
+  const d=saved[i]; if(!d) return;
+  editingIndex=null; setEditMode(false);
+  if(mode==="all"){
+    loadPlot(d);                                              // clone everything incl. tallies
+    $("X").value=""; $("Y").value=""; $("Z").value=""; $("PHOTONUM").value=""; clearPhotos(); setNow();
+  } else {
+    SITE_FIELDS.forEach(f=>{
+      if(f==="STANDID"){ if(d.STANDID) addStand(d.STANDID); standSelect(); setSel($("STANDID"), d.STANDID||""); }
+      else if(f==="TRACT"){ if(d.TRACT) addTract(d.TRACT); tractSelect(); setSel($("TRACT"), d.TRACT||""); }
+      else if(ADDABLE[f]){ if(d[f]) addableAdd(f,d[f]); addableBuild(f); setSel($(f), d[f]||""); }
+      else setField($(f), d[f]!==undefined?d[f]:"");
+    });
+  }
+  setField($("PLOTNUM"), nextPlotFor($("STANDID").value));    // keep the automatic plot number
+  updateTally(); autoGPS();                                   // recapture GPS at the new spot
+  closePlotPick();
+  toast(mode==="all"?"Copied all fields — recapturing GPS":"Copied site fields — recapturing GPS");
+}
+function cancelEdit(){ editingIndex=null; setEditMode(false); clearDraft(); nextPlot(); }
+function setEditMode(on){
+  $("editBanner").style.display = on?"block":"none";
+  document.querySelector(".btn.submit").textContent = on?"Update plot":"Submit plot";
+}
+
+function persist(){ if(STORE){ try{ STORE.setItem(PKEY, JSON.stringify(saved)); }catch(e){} } }
+function nextPlotFor(stand){
+  let max=0; const s=stand||"";
+  saved.forEach(p=>{ if((p.STANDID||"")===s){ const n=parseInt(p.PLOTNUM,10); if(!isNaN(n)&&n>max) max=n; } });
+  return max+1;
+}
+function nextPlot(){
+  const stand=$("STANDID").value, tract=$("TRACT").value;
+  const carryStand = stand===ADD_STAND?"":stand;
+  document.querySelectorAll("input,textarea").forEach(el=>el.value="");
+  document.querySelectorAll("select").forEach(el=>el.selectedIndex=0);
+  treeRows.innerHTML=""; ["adrgn","eargn","shrub"].forEach(k=>$(PAIR[k].el).innerHTML="");
+  standSelect(); setSel($("STANDID"), carryStand);                 // carry the prior plot's stand forward
+  tractSelect(); setSel($("TRACT"), tract===ADD_TRACT?"":tract);   // carry the prior plot's tract forward
+  setField($("PLOTNUM"), nextPlotFor(carryStand)); renderGround([]); clearPhotos(); addTree(); setNow(); updateTally(); autoGPS();
+}
+
+/* ---------- saved list ---------- */
+function isOffline(){ return navigator.onLine===false; }
+function renderSaved(){
+  const sent=saved.filter(p=>p._sent).length, q=saved.length-sent;
+  $("savedChip").textContent=`${saved.length} saved`; $("liveSaved").textContent=saved.length;
+  $("liveQueued").textContent = q ? `· ${q} to send${isOffline()?" (offline)":""}` : (isOffline()?"· offline":"");
+  const c=$("savedList");
+  if(!saved.length){ c.innerHTML=`<div class="saved-empty">No plots yet. Fill the card and tap <b>Submit plot</b>.</div>`; return; }
+  const sendAll = q ? `<button class="btn-mini" type="button" onclick="flushQueue(true)" style="margin-bottom:10px">Send all queued (${q})</button>` : "";
+  c.innerHTML=sendAll+`<table class="saved"><thead><tr><th>Stand</th><th>Plot</th><th>Trees</th><th>Status</th><th></th></tr></thead><tbody>`+
+    saved.map((p,i)=>`<tr><td class="num">${esc(p.STANDID||"—")}</td><td class="num">${esc(p.PLOTNUM||"—")}</td>
+      <td class="num">${p._trees||0}</td>
+      <td>${p._sent?`<span class="st sent">sent</span>`:`<span class="st queued">queued</span>`}</td>
+      <td style="text-align:right"><button class="tbtn" onclick="editPlot(${i})">Edit</button>${p._sent?"":`<button class="tbtn" onclick="resend(${i})">Send</button>`}<button class="tbtn del" onclick="delPlot(${i})">✕</button></td></tr>`).join("")+
+    `</tbody></table>`;
+}
+function delPlot(i){ saved.splice(i,1); persist(); renderSaved(); netDot(); }
+function netDot(){ const q=saved.filter(p=>!p._sent).length; const d=$("netDot"); d.className="dot "+((!connected||isOffline()||q)?"off":"on"); }
+
+/* ---------- offline queue: auto-send when signal returns ---------- */
+function flushQueue(manual){
+  const q=saved.filter(p=>!p._sent);
+  if(!connected){ if(manual) toast("Set SCRIPT_URL first",true); return; }
+  if(!q.length){ if(manual) toast("Nothing queued"); return; }
+  if(isOffline()){ if(manual) toast("Still offline — will send when back in signal",true); return; }
+  if(manual) toast(`Sending ${q.length} queued plot${q.length===1?"":"s"}…`);
+  q.forEach(d=>{
+    fetch(SCRIPT_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(d)})
+      .then(()=>{ d._sent=true; persist(); renderSaved(); netDot(); })
+      .catch(()=>{});
+  });
+}
+window.addEventListener("online", ()=>{ toast("Back online — sending queued plots"); netDot(); renderSaved(); flushQueue(); flushSpecies(); fetchSpecies(); flushTracts(); fetchTracts(); flushPhotos(); });
+window.addEventListener("offline", ()=>{ netDot(); renderSaved(); });
+setInterval(()=>{ if(saved.some(p=>!p._sent)) flushQueue(); }, 60000); // safety retry every 60s
+
+/* ---------- GPS ---------- */
+function captureGPS(auto){
+  if(!navigator.geolocation){ if(!auto) toast("No geolocation",true); return; }
+  $("gpsHint").textContent="Locating…";
+  navigator.geolocation.getCurrentPosition(p=>{ const c=p.coords;
+    $("X").value=c.longitude.toFixed(6); $("Y").value=c.latitude.toFixed(6); $("Z").value=(c.altitude!=null)?c.altitude.toFixed(1):"";
+    $("gpsHint").textContent=`Captured ±${Math.round(c.accuracy)} m (WGS84)${auto?" automatically":""}.`; toast(auto?"GPS captured for new plot":"GPS captured"); },
+    e=>{ $("gpsHint").textContent="GPS unavailable — capture or enter manually. ("+e.message+")"; if(!auto) toast("GPS failed",true); },
+    {enableHighAccuracy:true,timeout:15000,maximumAge:0});
+}
+function autoGPS(){ captureGPS(true); }   // fresh plot only — never overwrites an edited plot's coords
+
+/* ---------- photos: capture, auto-number, save on device (IndexedDB) + upload to Drive ---------- */
+const HAS_IDB = !!window.indexedDB;
+const PHOTO_DB="fi_photos_db", PHOTO_STORE="photos";
+let pendingMem=[];   // fallback upload queue, used only if IndexedDB is unavailable
+let photoNum = (STORE && parseInt(STORE.getItem("fi_photonum"),10)) || 0;
+function setPhotoNum(n){ photoNum=n; if(STORE){ try{ STORE.setItem("fi_photonum",String(n)); }catch(e){} } }
+// IndexedDB keeps a durable, permanent copy of every photo on the phone (survives app close).
+function idbOpen(){ return new Promise((res,rej)=>{ const r=indexedDB.open(PHOTO_DB,1);
+  r.onupgradeneeded=()=>{ const db=r.result; if(!db.objectStoreNames.contains(PHOTO_STORE)) db.createObjectStore(PHOTO_STORE,{keyPath:"filename"}); };
+  r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+function idbPut(rec){ return new Promise((res,rej)=>{ idbOpen().then(db=>{ const tx=db.transaction(PHOTO_STORE,"readwrite"); tx.objectStore(PHOTO_STORE).put(rec); tx.oncomplete=()=>{db.close();res();}; tx.onerror=()=>{db.close();rej(tx.error);}; }).catch(rej); }); }
+function idbAll(){ return new Promise((res,rej)=>{ idbOpen().then(db=>{ const tx=db.transaction(PHOTO_STORE,"readonly"); const rq=tx.objectStore(PHOTO_STORE).getAll(); rq.onsuccess=()=>{db.close();res(rq.result||[]);}; rq.onerror=()=>{db.close();rej(rq.error);}; }).catch(rej); }); }
+function idbDelete(fn){ return new Promise((res,rej)=>{ idbOpen().then(db=>{ const tx=db.transaction(PHOTO_STORE,"readwrite"); tx.objectStore(PHOTO_STORE).delete(fn); tx.oncomplete=()=>{db.close();res();}; tx.onerror=()=>{db.close();rej(tx.error);}; }).catch(rej); }); }
+function idbClearStore(){ return new Promise((res,rej)=>{ idbOpen().then(db=>{ const tx=db.transaction(PHOTO_STORE,"readwrite"); tx.objectStore(PHOTO_STORE).clear(); tx.oncomplete=()=>{db.close();res();}; tx.onerror=()=>{db.close();rej(tx.error);}; }).catch(rej); }); }
+function idbSetUploaded(fn){ return new Promise(res=>{ idbOpen().then(db=>{ const tx=db.transaction(PHOTO_STORE,"readwrite"), st=tx.objectStore(PHOTO_STORE), g=st.get(fn);
+  g.onsuccess=()=>{ const r=g.result; if(r){ r.uploaded=true; st.put(r); } }; tx.oncomplete=()=>{db.close();res();}; tx.onerror=()=>{db.close();res();}; }).catch(()=>res()); }); }
+function downscaleImage(file,maxPx,quality){
+  return new Promise((resolve,reject)=>{
+    const img=new Image(), url=URL.createObjectURL(file);
+    img.onload=()=>{ try{
+      const scale=Math.min(1, maxPx/Math.max(img.width,img.height));
+      const w=Math.round(img.width*scale), h=Math.round(img.height*scale);
+      const cv=document.createElement("canvas"); cv.width=w; cv.height=h;
+      cv.getContext("2d").drawImage(img,0,0,w,h);
+      const u=cv.toDataURL("image/jpeg",quality||0.6); URL.revokeObjectURL(url); resolve(u);
+    }catch(e){ URL.revokeObjectURL(url); reject(e); } };
+    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error("image load failed")); };
+    img.src=url;
+  });
+}
+function handlePhoto(input){
+  const file=input.files&&input.files[0]; input.value="";
+  if(!file) return;
+  const num=photoNum+1; setPhotoNum(num);
+  const stand=$("STANDID").value||"plot", plot=$("PLOTNUM").value||"x";
+  const filename=`${stand}_${plot}_${String(num).padStart(3,"0")}.jpg`.replace(/[^A-Za-z0-9_.\-]/g,"-");
+  $("PHOTONUM").value = $("PHOTONUM").value ? ($("PHOTONUM").value+", "+num) : String(num);
+  $("photoHint").textContent="Processing photo…";
+  downscaleImage(file,1280,0.6).then(dataUrl=>{
+    addThumb(dataUrl,num);
+    const rec={filename,num,stand,plot,time:new Date().toISOString(),data:dataUrl,uploaded:false};
+    const saved_ = HAS_IDB ? idbPut(rec).catch(()=>{ pendingMem.push(rec); }) : (pendingMem.push(rec),Promise.resolve());
+    saved_.then(()=>{ $("photoHint").textContent=`Photo ${num} saved on phone — ${filename}`; updateArchiveBadge(); flushPhotos(); });
+  }).catch(()=>{ $("photoHint").textContent=`Photo # ${num} recorded (image couldn't be processed on this device).`; });
+}
+function addThumb(dataUrl,num){
+  const div=document.createElement("div"); div.className="thumb";
+  div.innerHTML=`<img src="${dataUrl}" alt="photo ${num}"><span class="tnum">#${num}</span>`;
+  $("photoThumbs").appendChild(div);
+}
+function flushPhotos(){
+  if(!connected || isOffline()) return;
+  if(HAS_IDB){ idbAll().then(list=>{ list.filter(r=>!r.uploaded).forEach(uploadPhoto_); }).catch(()=>{}); }
+  else { pendingMem.slice().forEach(uploadPhoto_); }
+}
+function uploadPhoto_(r){
+  fetch(SCRIPT_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},
+    body:JSON.stringify({_action:"photo",filename:r.filename,data:r.data})})
+    .then(()=>{ if(HAS_IDB){ idbSetUploaded(r.filename).then(()=>{ updateArchiveBadge(); if($("photoArchive").style.display==="flex") renderArchive(); }); }
+                else { pendingMem=pendingMem.filter(x=>x.filename!==r.filename); } })
+    .catch(()=>{});
+}
+function clearPhotos(){ $("photoThumbs").innerHTML=""; }   // new-plot reset clears the strip only — the on-device archive is kept
+
+/* ---------- on-device photo archive (review + clear) ---------- */
+function approxMB(list){ let b=0; list.forEach(r=>{ b += (r.data ? r.data.length*0.75 : 0); }); return (b/1048576).toFixed(1); }
+function updateArchiveBadge(){
+  const btn=$("archiveBtn"); if(!btn) return;
+  const set=n=>btn.textContent=`📁 On-device photos (${n})`;
+  if(HAS_IDB) idbAll().then(l=>set(l.length)).catch(()=>set(0)); else set(pendingMem.length);
+}
+function openArchive(){ $("photoArchive").style.display="flex"; renderArchive(); }
+function closeArchive(){ $("photoArchive").style.display="none"; }
+function renderArchive(){
+  const grid=$("archiveGrid"), meta=$("archiveMeta");
+  const render=list=>{
+    list.sort((a,b)=>String(b.time||"").localeCompare(String(a.time||"")));
+    const q=list.filter(r=>!r.uploaded).length;
+    meta.textContent = list.length
+      ? `${list.length} photo${list.length>1?"s":""} on this phone · ~${approxMB(list)} MB · ${q} waiting to upload`
+      : "No photos saved on this phone yet.";
+    grid.innerHTML = list.map(r=>`<div class="pcell">
+      <span class="pstat ${r.uploaded?"up":"q"}">${r.uploaded?"✓ up":"⏳ queued"}</span>
+      <button class="pdel" type="button" onclick="deletePhoto('${esc(r.filename)}')">✕</button>
+      <img src="${r.data}" alt="${esc(r.filename)}">
+      <div class="pcap">${esc(r.filename)}</div></div>`).join("");
+  };
+  if(HAS_IDB) idbAll().then(render).catch(()=>render([])); else render(pendingMem.slice());
+}
+function deletePhoto(fn){
+  const after=()=>{ updateArchiveBadge(); renderArchive(); };
+  if(HAS_IDB) idbDelete(fn).then(after).catch(after); else { pendingMem=pendingMem.filter(x=>x.filename!==fn); after(); }
+}
+function clearArchive(){
+  if(!confirm("Delete all photos saved on this phone? Photos already uploaded to Drive are not affected.")) return;
+  const after=()=>{ updateArchiveBadge(); renderArchive(); toast("On-device photos cleared"); };
+  if(HAS_IDB) idbClearStore().then(after).catch(after); else { pendingMem=[]; after(); }
+}
+
+/* ---------- CSV backup ---------- */
+function csvCell(v){ v=(v==null)?"":String(v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+function exportCSV(){
+  if(!saved.length){ toast("Nothing to export yet",true); return; }
+  const lines=[HEADER.join(",")];
+  for(const p of saved) lines.push(HEADER.map(h=>csvCell(p[h]!==undefined?p[h]:"")).join(","));
+  const blob=new Blob([lines.join("\r\n")],{type:"text/csv"}), url=URL.createObjectURL(blob), a=document.createElement("a");
+  a.href=url; a.download=`FRIPLOTS_${nowStr().replace(/[: ]/g,"-")}.csv`; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500); toast(`Exported ${saved.length} plot${saved.length===1?"":"s"}`);
+}
+
+/* ---------- export plots as a WGS84 point shapefile (.shp/.shx/.dbf/.prj, zipped) ---------- */
+/* Written natively (no library) so it works fully offline. Each plot = one point from X (lon) / Y (lat),
+   with every plot column carried as a DBF attribute. */
+function exportShapefile(){
+  if(!saved.length){ toast("Nothing to export yet",true); return; }
+  const rows=saved.filter(p=>{ const x=parseFloat(p.X), y=parseFloat(p.Y); return isFinite(x)&&isFinite(y); });
+  if(!rows.length){ toast("No plots have GPS coordinates yet",true); return; }
+  const bytes=buildPlotShapefileZip(rows,HEADER);
+  const blob=new Blob([bytes],{type:"application/zip"}), url=URL.createObjectURL(blob), a=document.createElement("a");
+  a.href=url; a.download=`FRIplots_${nowStr().replace(/[: ]/g,"-")}.zip`; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+  const skipped=saved.length-rows.length;
+  toast(`Shapefile: ${rows.length} plot${rows.length===1?"":"s"}${skipped?` · ${skipped} without GPS skipped`:""}`);
+}
+function buildPlotShapefileZip(rows, cols){
+  // DBF field defs (all character), names upper-cased, <=10 chars, de-duplicated; width = longest value
+  const used={}, fields=cols.map(c=>{
+    let n=String(c).toUpperCase().replace(/[^A-Z0-9_]/g,"").slice(0,10) || "F";
+    if(used[n]){ const base=n.slice(0,8); let k=1; do{ n=(base+k).slice(0,10); k++; }while(used[n]); }
+    used[n]=1;
+    let w=1; for(const r of rows){ const v=(r[c]==null?"":String(r[c])); if(v.length>w) w=v.length; }
+    return { col:c, name:n, width:Math.min(Math.max(w,1),254) };
+  });
+  const N=rows.length, REC=28;                       // point record = 8-byte header + 20-byte content
+  const shp=new DataView(new ArrayBuffer(100+N*REC));
+  const shx=new DataView(new ArrayBuffer(100+N*8));
+  let xmin=Infinity,ymin=Infinity,xmax=-Infinity,ymax=-Infinity;
+  rows.forEach(r=>{ const x=parseFloat(r.X), y=parseFloat(r.Y); if(x<xmin)xmin=x; if(y<ymin)ymin=y; if(x>xmax)xmax=x; if(y>ymax)ymax=y; });
+  const hdr=(dv,words)=>{ dv.setInt32(0,9994,false); dv.setInt32(24,words,false); dv.setInt32(28,1000,true); dv.setInt32(32,1,true);
+    dv.setFloat64(36,xmin,true); dv.setFloat64(44,ymin,true); dv.setFloat64(52,xmax,true); dv.setFloat64(60,ymax,true); };
+  hdr(shp,(100+N*REC)/2); hdr(shx,(100+N*8)/2);
+  let off=100;
+  rows.forEach((r,i)=>{ const x=parseFloat(r.X), y=parseFloat(r.Y);
+    shp.setInt32(off,i+1,false); shp.setInt32(off+4,10,false);                 // record header (BE): num, length(words)
+    shp.setInt32(off+8,1,true); shp.setFloat64(off+12,x,true); shp.setFloat64(off+20,y,true); // content (LE): type,x,y
+    shx.setInt32(100+i*8,off/2,false); shx.setInt32(100+i*8+4,10,false);
+    off+=REC; });
+  // .dbf
+  const hLen=32+32*fields.length+1, rLen=1+fields.reduce((s,f)=>s+f.width,0);
+  const dbf=new Uint8Array(hLen+N*rLen+1), dv=new DataView(dbf.buffer);
+  dbf[0]=0x03; const d=new Date(); dbf[1]=d.getFullYear()-1900; dbf[2]=d.getMonth()+1; dbf[3]=d.getDate();
+  dv.setUint32(4,N,true); dv.setUint16(8,hLen,true); dv.setUint16(10,rLen,true);
+  let p=32; fields.forEach(f=>{ for(let k=0;k<f.name.length;k++) dbf[p+k]=f.name.charCodeAt(k); dbf[p+11]=0x43; dbf[p+16]=f.width; p+=32; });
+  dbf[p++]=0x0D;
+  rows.forEach(r=>{ dbf[p++]=0x20; fields.forEach(f=>{ const v=(r[f.col]==null?"":String(r[f.col]));
+    for(let k=0;k<f.width;k++){ let ch=k<v.length?v.charCodeAt(k):0x20; if(ch>255)ch=0x3F; dbf[p+k]=ch; } p+=f.width; }); });
+  dbf[p]=0x1A;
+  const prj='GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]';
+  return zipStore([
+    {name:"FRIplots.shp",data:new Uint8Array(shp.buffer)},
+    {name:"FRIplots.shx",data:new Uint8Array(shx.buffer)},
+    {name:"FRIplots.dbf",data:dbf},
+    {name:"FRIplots.prj",data:strBytes(prj)}
+  ]);
+}
+function strBytes(s){ const a=new Uint8Array(s.length); for(let i=0;i<s.length;i++){ const c=s.charCodeAt(i); a[i]=c>255?0x3F:c; } return a; }
+const _crcTab=(()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1); t[n]=c>>>0; } return t; })();
+function crc32(u8){ let c=0xFFFFFFFF; for(let i=0;i<u8.length;i++) c=_crcTab[(c^u8[i])&0xFF]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function zipStore(files){   // ZIP with "stored" (uncompressed) entries — enough to bundle the shapefile parts
+  const enc=files.map(f=>({ name:strBytes(f.name), data:f.data, crc:crc32(f.data) }));
+  let local=0; enc.forEach(f=>local+=30+f.name.length+f.data.length);
+  let cd=0; enc.forEach(f=>cd+=46+f.name.length);
+  const out=new Uint8Array(local+cd+22), dv=new DataView(out.buffer); let o=0; const offs=[];
+  enc.forEach(f=>{ offs.push(o);
+    dv.setUint32(o,0x04034b50,true); o+=4; dv.setUint16(o,20,true); o+=2; dv.setUint16(o,0,true); o+=2;
+    dv.setUint16(o,0,true); o+=2; dv.setUint16(o,0,true); o+=2; dv.setUint16(o,0,true); o+=2;
+    dv.setUint32(o,f.crc,true); o+=4; dv.setUint32(o,f.data.length,true); o+=4; dv.setUint32(o,f.data.length,true); o+=4;
+    dv.setUint16(o,f.name.length,true); o+=2; dv.setUint16(o,0,true); o+=2;
+    out.set(f.name,o); o+=f.name.length; out.set(f.data,o); o+=f.data.length; });
+  const cdStart=o;
+  enc.forEach((f,i)=>{ dv.setUint32(o,0x02014b50,true); o+=4; dv.setUint16(o,20,true); o+=2; dv.setUint16(o,20,true); o+=2;
+    dv.setUint16(o,0,true); o+=2; dv.setUint16(o,0,true); o+=2; dv.setUint16(o,0,true); o+=2; dv.setUint16(o,0,true); o+=2;
+    dv.setUint32(o,f.crc,true); o+=4; dv.setUint32(o,f.data.length,true); o+=4; dv.setUint32(o,f.data.length,true); o+=4;
+    dv.setUint16(o,f.name.length,true); o+=2; dv.setUint16(o,0,true); o+=2; dv.setUint16(o,0,true); o+=2;
+    dv.setUint16(o,0,true); o+=2; dv.setUint16(o,0,true); o+=2; dv.setUint32(o,0,true); o+=4; dv.setUint32(o,offs[i],true); o+=4;
+    out.set(f.name,o); o+=f.name.length; });
+  dv.setUint32(o,0x06054b50,true); o+=4; dv.setUint16(o,0,true); o+=2; dv.setUint16(o,0,true); o+=2;
+  dv.setUint16(o,enc.length,true); o+=2; dv.setUint16(o,enc.length,true); o+=2;
+  dv.setUint32(o,cd,true); o+=4; dv.setUint32(o,cdStart,true); o+=4; dv.setUint16(o,0,true);
+  return out;
+}
+
+/* ====================== FIELD TOOLS ====================== */
+
+/* ---------- More menu ---------- */
+function openMore(){ $("moreMenu").style.display="flex"; }
+function closeMore(){ $("moreMenu").style.display="none"; }
+
+/* ---------- data-entry person (per device): set once, stamped on every plot ---------- */
+let cruiser = (STORE && (()=>{ try{ return STORE.getItem("fi_cruiser")||""; }catch(e){ return ""; } })()) || "";
+function renderCruiser(){ const el=$("cruiserName"); if(el) el.textContent = cruiser || "not set"; }
+function openCruiser(){ $("cruiserInput").value=cruiser; $("cruiserModal").style.display="flex"; setTimeout(()=>$("cruiserInput").focus(),40); }
+function closeCruiser(){ $("cruiserModal").style.display="none"; }
+function saveCruiser(){ cruiser=$("cruiserInput").value.trim(); if(STORE){ try{ STORE.setItem("fi_cruiser",cruiser); }catch(e){} } renderCruiser(); closeCruiser(); if(cruiser) toast(`Data entry: ${cruiser}`); }
+
+/* ---------- draft auto-save: keep the in-progress plot, offer to resume after an accidental close ---------- */
+const DRAFTKEY="fi_draft"; let draftTimer=null;
+function draftDataHasContent(d){ if(!d) return false;
+  for(let i=1;i<=28;i++){ if(d["T"+i+"SP"]||d["T"+i+"S"]) return true; }
+  return ["AGE","HT","CC","COMMENT","PHOTONUM","HTDBH","AGECORED","CAI"].some(k=>String(d[k]||"").trim()!=="");
+}
+function saveDraft(){ if(!STORE) return; const d=collect();
+  if(!draftDataHasContent(d)){ try{ STORE.removeItem(DRAFTKEY); }catch(e){} return; }
+  try{ STORE.setItem(DRAFTKEY, JSON.stringify({data:d, editingIndex, ts:nowStr()})); }catch(e){} }
+function scheduleDraftSave(){ clearTimeout(draftTimer); draftTimer=setTimeout(saveDraft, 1200); }
+function clearDraft(){ if(STORE){ try{ STORE.removeItem(DRAFTKEY); }catch(e){} } }
+function checkDraft(){ if(!STORE) return; let draft;
+  try{ draft=JSON.parse(STORE.getItem(DRAFTKEY)); }catch(e){}
+  if(!draft || !draftDataHasContent(draft.data)){ clearDraft(); return; }
+  const when=String(draft.ts||"").slice(0,16).replace("T"," ");
+  const editing = (typeof draft.editingIndex==="number") ? " (an edit in progress)" : "";
+  $("draftInfo").textContent=`You left a plot unsaved${when?` from ${when}`:""}${editing}. Resume where you left off, or discard it.`;
+  $("draftRestore").style.display="flex";
+}
+function resumeDraft(){ let draft; try{ draft=JSON.parse(STORE.getItem(DRAFTKEY)); }catch(e){}
+  if(draft && draft.data){ loadPlot(draft.data);
+    if(typeof draft.editingIndex==="number" && saved[draft.editingIndex]){ editingIndex=draft.editingIndex; setEditMode(true); } else editingIndex=null;
+    updateTally(); toast("Unsaved plot restored"); }
+  $("draftRestore").style.display="none";
+}
+function discardDraft(){ clearDraft(); $("draftRestore").style.display="none"; toast("Draft discarded"); }
+
+/* ---------- pre-submit validation ---------- */
+function validatePlot(d){
+  const blocks=[], warns=[];
+  if(!d.X || !d.Y) warns.push("No GPS location captured (X/Y empty).");
+  const n = d._trees!=null ? d._trees : treeCount();
+  if(!n) warns.push("No trees tallied — is this an empty / non-forested plot?");
+  let incomplete=0; for(let i=1;i<=28;i++){ const sp=d["T"+i+"SP"], s=d["T"+i+"S"]; if((sp&&!s)||(!sp&&s)) incomplete++; }
+  if(incomplete) warns.push(`${incomplete} tree row${incomplete>1?"s":""} missing species or DBH.`);
+  if(d.CC==="") warns.push("Crown closure (CC) not set.");
+  const dup = d.STANDID && d.STANDID!=="-" && saved.some((p,idx)=> idx!==editingIndex && p.PLOTNUM && p.STANDID===d.STANDID && p.PLOTNUM===d.PLOTNUM);
+  if(dup) warns.push(`Stand ${d.STANDID} already has a plot ${d.PLOTNUM}.`);
+  return {blocks,warns};
+}
+function showValidate(blocks,warns,onProceed){
+  $("validateTitle").textContent = blocks.length ? "Can't submit yet" : "Before you submit";
+  $("validateBody").innerHTML =
+    blocks.map(m=>`<div class="v-item block"><span class="ic">⛔</span><span>${esc(m)}</span></div>`).join("") +
+    warns.map(m=>`<div class="v-item warn"><span class="ic">⚠️</span><span>${esc(m)}</span></div>`).join("");
+  const acts=$("validateActions"); acts.innerHTML="";
+  const back=document.createElement("button"); back.className="btn ghost"; back.type="button";
+  back.textContent = blocks.length ? "OK" : "Go back"; back.onclick=closeValidate; acts.appendChild(back);
+  if(onProceed && !blocks.length){ const go=document.createElement("button"); go.className="btn submit"; go.type="button";
+    go.textContent="Submit anyway"; go.onclick=()=>{ closeValidate(); onProceed(); }; acts.appendChild(go); }
+  $("validateModal").style.display="flex";
+}
+function closeValidate(){ $("validateModal").style.display="none"; }
+
+/* ---------- back up & restore all data ---------- */
+function safeArr(s){ try{ const a=JSON.parse(s); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
+function exportBackup(){
+  const store={};
+  if(STORE){ for(let i=0;i<STORE.length;i++){ const k=STORE.key(i); if(k && k.indexOf("fi_")===0){ try{ store[k]=STORE.getItem(k); }catch(e){} } } }
+  else { store[PKEY]=JSON.stringify(saved); }
+  const backup={ app:"FRI Plot Card", version:1, exportedAt:new Date().toISOString(), plots:saved.length, store };
+  const blob=new Blob([JSON.stringify(backup)],{type:"application/json"}), url=URL.createObjectURL(blob), a=document.createElement("a");
+  a.href=url; a.download=`FRI-backup_${nowStr().replace(/[: ]/g,"-")}.json`; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+  toast(`Backed up ${saved.length} plot${saved.length===1?"":"s"} + your lists`);
+}
+function importBackup(file){
+  file.text().then(txt=>{
+    let b; try{ b=JSON.parse(txt); }catch(e){ toast("Not a valid backup file",true); return; }
+    const store=b && b.store; if(!store || typeof store!=="object"){ toast("Backup has no data",true); return; }
+    const incPlots=safeArr(store[PKEY]);
+    let added=0,updated=0;
+    incPlots.forEach(p=>{ if(p && p._id && saved.some(q=>q._id===p._id)) updated++; else added++; });
+    if(!confirm(`Restore this backup?\n\n• ${incPlots.length} plot(s) in the file (${added} new, ${updated} already here)\n• Your custom lists will be merged\n• Photos are not included (they're in Drive / on-device archive)`)) return;
+    const merged=saved.slice();
+    incPlots.forEach(p=>{ if(!p) return; const idx=p._id?merged.findIndex(q=>q._id===p._id):-1; if(idx>=0) merged[idx]=p; else merged.push(p); });
+    if(STORE){
+      STORE.setItem(PKEY,JSON.stringify(merged));
+      ["fi_tracts","fi_cstands","fi_cshrub","fi_pendspp","fi_pests","fi_disease","fi_harv","fi_renew","fi_tend","fi_sar","fi_invasp","fi_nest"].forEach(k=>{
+        if(store[k]!==undefined){ const out=safeArr(STORE.getItem(k)); safeArr(store[k]).forEach(v=>{ if(!out.some(x=>String(x).toLowerCase()===String(v).toLowerCase())) out.push(v); }); STORE.setItem(k,JSON.stringify(out)); }
+      });
+      if(store.fi_ctree!==undefined){ const out=safeArr(STORE.getItem("fi_ctree")).map(normTree); safeArr(store.fi_ctree).map(normTree).forEach(o=>{ if(o.name && !out.some(x=>x.code.toLowerCase()===o.code.toLowerCase())) out.push(o); }); STORE.setItem("fi_ctree",JSON.stringify(out)); }
+      if(store.fi_photonum!==undefined){ const mx=Math.max(parseInt(STORE.getItem("fi_photonum")||"0",10)||0, parseInt(store.fi_photonum,10)||0); STORE.setItem("fi_photonum",String(mx)); }
+      ["fi_boundaries","fi_standfield"].forEach(k=>{ if(store[k]!==undefined && !STORE.getItem(k)) STORE.setItem(k,store[k]); });
+      toast("Restored — reloading…"); setTimeout(()=>location.reload(),700);
+    } else { saved=merged; renderSaved(); toast(`Restored ${merged.length} plots (not saved — storage unavailable)`,true); }
+  }).catch(()=>toast("Couldn't read that file",true));
+}
+
+/* ---------- live stand summary ---------- */
+/* Pettawawa total-volume equations (Bonnor & Magnussen 1986), per inventory species code: [a,b,a1,b1,c1].
+   Height is modelled from DBH: H = 1.3·exp(a + b/DBH);  Volume = c1·DBH² / (a1 + b1/H). */
+const PETT={"Ap":[3.001,-7.643,0.634,134.264,0.0043336],"Ab":[3.001,-7.643,0.634,134.264,0.0043336],"Ag":[3.001,-7.643,0.634,134.264,0.0043336],"Aw":[3.001,-7.643,0.634,134.264,0.0043336],"Bb":[3.28,-9.964,1.877,101.376,0.0043336],"Bd":[3.128,-8.648,0.948,122.377,0.0043336],"Be":[3.071,-7.073,0.959,102.047,0.0043336],"Bf":[3.152,-10.924,2.139,91.9277,0.004331],"Bn":[3.31,-10.764,1.046,117.043,0.0043336],"Bt":[3.001,-7.643,0.634,134.264,0.0043336],"Bw":[3.1,-9.964,2.222,91.5619,0.0043218],"By":[3.262,-13.837,1.449,105.075,0.0043119],"Cb":[3.31,-10.764,1,100,0.0043336],"Ce":[3.075,-13.299,4.167,74.6455,0.0043298],"Cp":[3.28,-9.964,1.877,101.376,0.0043336],"El":[3.28,-9.964,0.634,134.264,0.0043336],"Ff":[3.513,-17.376,1.44,104.303,0.0043218],"He":[2.705,-5.454,1.112,106.71,0.0043298],"Hi":[3.31,-10.764,1.046,117.043,0.0043336],"Iw":[3.28,-9.964,1.877,101.376,0.0043336],"La":[2.95,-7.182,1.588,101.62,0.004331],"Lb":[3.28,-9.964,1,100,0.0043336],"Mh":[3.2,-10.764,1.046,117.043,0.0043336],"Mm":[3.2,-10.764,1.046,117.043,0.0043336],"Mr":[3.2,-10.764,1.046,117.043,0.0043336],"Ms":[3.2,-10.764,1.046,117.043,0.0043336],"Ob":[3.055,-9.569,1.512,102.565,0.0043336],"Or":[3.055,-9.569,1.512,102.565,0.0043336],"Pj":[3.209,-11.758,0.897,106.223,0.0043313],"Po":[3.1,-9.341,-0.312,133.106,0.0043405],"Pr":[3.395,-13.281,0.71,108.387,0.0043313],"Ps":[3.209,-11.758,0.897,106.223,0.0043313],"Pw":[3.5,-15.125,0.691,110.856,0.0043188],"Sblu":[3.25,-17.376,1.44,104.303,0.0043218],"Sw":[3.2,-17.376,1.44,104.303,0.0043218],"Sn":[3.25,-17.376,1.44,104.303,0.0043218],"Ta":[2.991,-7.182,1.588,101.62,0.0043264],"Wi":[3.2,-9.341,-0.312,133.106,0.0043405],"Wn":[3.31,-10.764,1.046,117.043,0.0043336],"Pa":[3.395,-13.281,0.71,108.387,0.0043313],"Pt":[3.1,-9.341,-0.312,133.106,0.0043405],"Pb":[3.1,-9.341,-0.312,133.106,0.0043405],"Pg":[3.1,-9.341,-0.312,133.106,0.0043405]};
+const PETT_SOFT=new Set(["Pw","Pr","Pj","Ps","Pa","Sw","Sb","Sn","Bf","He","Ce","La","Ta"]); // conifers, for defaulting
+const PETT_SKIP=new Set(["Sng","CWD","CAV"]);   // habitat features — no merchantable volume
+const M3_TO_CORDS=1/5.929;
+function pettCoef(sp){ if(PETT[sp]) return PETT[sp]; if(!sp||PETT_SKIP.has(sp)) return null;
+  return PETT_SOFT.has(sp)?PETT["Pr"]:PETT["Mh"]; }   // not in list → Pr (conifer) / Mh (hardwood)
+function pettVol(sp,dbh){ if(!isFinite(dbh)||dbh<=0) return 0; const c=pettCoef(sp); if(!c) return 0;
+  const H=1.3*Math.exp(c[0]+c[1]/dbh); return c[4]*dbh*dbh/(c[2]+c[3]/H); }   // m³, one tree
+function plotTrees(p){ const t=[]; for(let i=1;i<=28;i++){ const sp=p["T"+i+"SP"]||"", s=parseFloat(p["T"+i+"S"]);
+  if(p["T"+i+"SP"]||p["T"+i+"S"]) t.push({sp,dbh:isFinite(s)?s:null}); } return t; }
+function treeBA(dbh){ return Math.PI/4*Math.pow(dbh/100,2); }   // m² per tree
+const HAB_LABEL={Sng:"Snags",CWD:"Coarse woody debris",CAV:"Cavity trees"};
+function computeStand(plots){
+  let baSum=0,stemsSum=0,dbh2=0,dbhN=0,ageSum=0,ageN=0,volSum=0; const spBA={};
+  const hab={}; PETT_SKIP.forEach(h=>hab[h]={count:0,baSum:0,stemsSum:0});
+  plots.forEach(p=>{ plotTrees(p).forEach(t=>{
+      if(PETT_SKIP.has(t.sp)){ const H=hab[t.sp]; H.count++; H.baSum+=BAF; if(t.dbh) H.stemsSum+=BAF/treeBA(t.dbh); }   // habitat — kept out of live metrics
+      else { baSum+=BAF; if(t.dbh){ const ef=BAF/treeBA(t.dbh); stemsSum+=ef; dbh2+=t.dbh*t.dbh; dbhN++; volSum+=pettVol(t.sp,t.dbh)*ef; } if(t.sp) spBA[t.sp]=(spBA[t.sp]||0)+BAF; }
+    });
+    const a=parseFloat(p.AGECORED); if(isFinite(a)){ ageSum+=a; ageN++; } });
+  const np=plots.length, baHa=np?baSum/np:0, stemsHa=np?stemsSum/np:0, qmd=dbhN?Math.sqrt(dbh2/dbhN):0;
+  const meanAge=ageN?ageSum/ageN:null, volHa=np?volSum/np:0;
+  const tot=Object.values(spBA).reduce((a,b)=>a+b,0);
+  const comp=Object.entries(spBA).map(([sp,ba])=>({sp,pct:tot?ba/tot*100:0})).sort((a,b)=>b.pct-a.pct);
+  const habOut=[...PETT_SKIP].map(h=>({label:HAB_LABEL[h]||h,count:hab[h].count,perHa:np?hab[h].stemsSum/np:0,baHa:np?hab[h].baSum/np:0})).filter(x=>x.count>0);
+  return {nplots:np,baHa,stemsHa,qmd,meanAge,comp,vol:volHa,hab:habOut};
+}
+function openSummary(){
+  if(!saved.length){ toast("No saved plots yet",true); return; }
+  const stands=[...new Set(saved.map(p=>p.STANDID).filter(Boolean))].sort();
+  const sel=$("summaryStand"), cur=$("STANDID").value;
+  sel.innerHTML = `<option value="__all__">All plots (${saved.length})</option>` +
+    stands.map(s=>`<option value="${esc(s)}">${esc(s)} (${saved.filter(p=>p.STANDID===s).length})</option>`).join("");
+  sel.value = stands.includes(cur)?cur:"__all__";
+  $("standSummary").style.display="flex"; renderSummary();
+}
+function renderSummary(){
+  const v=$("summaryStand").value, plots = v==="__all__"?saved.slice():saved.filter(p=>p.STANDID===v), s=computeStand(plots);
+  const f=(x,d=0)=>x==null?"—":x.toFixed(d);
+  const comp = s.comp.slice(0,6).map(c=>`<div class="comp">${esc(c.sp||"?")} ${c.pct.toFixed(0)}%<div class="bar" style="width:${Math.max(4,Math.min(100,c.pct)).toFixed(0)}%"></div></div>`).join("") || "—";
+  const hab = (s.hab&&s.hab.length)
+    ? `<div style="margin-top:12px"><b>Habitat features</b> <span style="font-size:10px;color:#7a9a76">— not counted in BA / stems above</span>`
+      + s.hab.map(h=>`<div class="comp">${esc(h.label)} · ${h.perHa.toFixed(0)} /ha · ${h.count} tallied${h.baHa?` · ${h.baHa.toFixed(1)} m²/ha`:""}</div>`).join("") + `</div>`
+    : "";
+  $("summaryBody").innerHTML=`
+    <div class="big">
+      <div class="metric"><div class="k">Plots</div><div class="v">${s.nplots}</div></div>
+      <div class="metric"><div class="k">BA / ha</div><div class="v">${f(s.baHa,1)}<small> m²</small></div></div>
+      <div class="metric"><div class="k">Stems / ha</div><div class="v">${f(s.stemsHa,0)}</div></div>
+      <div class="metric"><div class="k">QMD</div><div class="v">${f(s.qmd,1)}<small> cm</small></div></div>
+    </div>
+    <div class="big">
+      <div class="metric"><div class="k">Mean age</div><div class="v">${f(s.meanAge,0)}<small> yr</small></div></div>
+      <div class="metric"><div class="k">Total vol/ha</div><div class="v">${f(s.vol,0)}<small> m³</small></div></div>
+    </div>
+    <div style="margin-top:4px"><b>Species — by basal area</b>${comp}</div>
+    ${hab}
+    <div class="note">BAF ${BAF.toFixed(1)} variable-radius plots. Volume = Pettawawa total stem volume — height modelled from DBH per species (Bonnor &amp; Magnussen 1986)${s.vol?` · ≈ ${(s.vol*M3_TO_CORDS).toFixed(1)} cords/ha`:""}. Species outside the equation set default to Pr (conifer) or Mh (hardwood).</div>`;
+}
+function closeSummary(){ $("standSummary").style.display="none"; }
+function exportSummaryCSV(){
+  if(!saved.length){ toast("No saved plots yet",true); return; }
+  const stands=[...new Set(saved.map(p=>p.STANDID).filter(Boolean))].sort();
+  const groups=[["All plots",saved.slice()]].concat(stands.map(s=>[s,saved.filter(p=>p.STANDID===s)]));
+  const head=["Scope","Plots","BA_m2_per_ha","Stems_per_ha","QMD_cm","MeanAge_yr","TotalVol_m3_per_ha","Cords_per_ha","Species_by_BA","HabitatFeatures"];
+  const f=(x,d)=>x==null?"":x.toFixed(d);
+  const rows=[head];
+  groups.forEach(([name,plots])=>{ const s=computeStand(plots);
+    const comp=s.comp.map(c=>`${c.sp||"?"} ${Math.round(c.pct)}%`).join("; ");
+    const hab=(s.hab||[]).map(h=>`${h.label} ${h.perHa.toFixed(0)}/ha (${h.count})`).join("; ");
+    rows.push([name,s.nplots,f(s.baHa,1),f(s.stemsHa,0),f(s.qmd,1),f(s.meanAge,0),f(s.vol,0),f(s.vol*M3_TO_CORDS,1),comp,hab]);
+  });
+  const csv=rows.map(r=>r.map(csvCell).join(",")).join("\n");
+  const blob=new Blob([csv],{type:"text/csv"}), url=URL.createObjectURL(blob), a=document.createElement("a");
+  a.href=url; a.download=`FRIstand-summary_${nowStr().replace(/[: ]/g,"-")}.csv`; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500); toast("Stand summary exported");
+}
+
+/* ---------- quick tap-to-tally ---------- */
+const QUICK_SPECIES=["Pw","Pr","Pj","Sw","Sb","Bf","He","Ce","Mh","Mr","By","Bw","Be","Or","Aw","Pt","Pb","Sng"];
+let quickDbh=20, quickQual="AGS", quickAddAfter=false;
+function toggleQuick(){ const on=$("quickPanel").style.display==="none"; $("quickPanel").style.display=on?"block":"none";
+  $("qtToggle").classList.toggle("on",on); if(on){ buildQuickPalette(); renderQuickList(); } }
+function buildQuickPalette(){ $("qtPalette").innerHTML=QUICK_SPECIES.map(sp=>`<button type="button" onclick="addQuick('${sp}')">${esc(sp)}</button>`).join(""); $("qtDbh").textContent=quickDbh; }
+function bumpDbh(d){ quickDbh=Math.min(90,Math.max(2,quickDbh+d)); $("qtDbh").textContent=quickDbh; }
+function setQual(q){ quickQual=q; $("qtQ_AGS").classList.toggle("on",q==="AGS"); $("qtQ_UGS").classList.toggle("on",q==="UGS"); }
+function addQuick(sp){ if(treeRows.children.length>=28){ toast("Max 28 trees"); return; } addTree({sp,s:String(quickDbh),q:quickQual}); renderQuickList(); }
+function renderQuickList(){
+  const groups={};
+  [...treeRows.children].forEach(r=>{ const sp=r.querySelector(".t_sp").value, s=r.querySelector(".t_s").value; if(!sp&&!s) return;
+    const k=sp+"|"+s; (groups[k]=groups[k]||{sp,s,n:0}).n++; });
+  const arr=Object.values(groups);
+  $("qtList").innerHTML = arr.length ? arr.map(g=>`<div class="qt-row"><span class="sp">${esc(g.sp||"?")}</span><span class="db">${esc(g.s||"—")} cm</span><span class="ct">×${g.n}</span>`+
+    `<button type="button" onclick="quickRemove('${esc(g.sp)}','${esc(g.s)}')">−</button>`+
+    `<button type="button" onclick="quickMore2('${esc(g.sp)}','${esc(g.s)}')">＋</button></div>`).join("")
+    : `<div class="qt-hint" style="text-align:center;padding:6px">No trees yet — set DBH, tap a species.</div>`;
+  const n=treeCount(); $("qtHint").textContent = n ? `${n} in · BA ${(n*BAF).toFixed(0)} m²/ha` : "";
+}
+function quickRemove(sp,s){ const row=[...treeRows.children].find(r=>r.querySelector(".t_sp").value===sp && r.querySelector(".t_s").value===s);
+  if(row){ row.remove(); renumberTrees(); updateTally(); renderQuickList(); } }
+function quickMore2(sp,s){ if(treeRows.children.length>=28){ toast("Max 28 trees"); return; } addTree({sp,s,q:quickQual}); renderQuickList(); }
+function openQuickMore(){ sppSelect($("quickMoreSel")); $("quickMore").style.display="flex"; }
+function closeQuickMore(){ $("quickMore").style.display="none"; }
+function quickMoreAdd(){ const sp=$("quickMoreSel").value;
+  if(sp===ADD_SENTINEL){ quickAddAfter=true; closeQuickMore(); openAddSpecies($("quickMoreSel"),false); return; }
+  closeQuickMore(); if(sp) addQuick(sp); }
+
+/* ---------- init ---------- */
+if(!connected) $("setupWarn").style.display="block";
+treeRows.addEventListener("input",e=>{ if(e.target.classList.contains("t_s")||e.target.classList.contains("t_sp")) updateTally(); });
+treeRows.addEventListener("change",e=>{ if(e.target.classList.contains("t_s")||e.target.classList.contains("t_sp")) updateTally(); });
+saved.forEach(p=>{ if(p.TRACT) addTract(p.TRACT); if(p.STANDID) addStand(p.STANDID); for(const id in ADDABLE){ if(p[id]) addableAdd(id,p[id]); } });   // seed lists from saved plots
+tractSelect(); standSelect(); addableBuildAll();
+document.addEventListener("change", e=>{ const el=e.target, a=el&&el.id&&ADDABLE[el.id]; if(a && el.value===a.sentinel) openAddable(el.id); });
+$("TRACT").addEventListener("change", ()=>{ if($("TRACT").value===ADD_TRACT) openAddTract(); });
+$("STANDID").addEventListener("change", ()=>{
+  if($("STANDID").value===ADD_STAND){ openAddStand(); return; }
+  if(editingIndex==null) setField($("PLOTNUM"), nextPlotFor($("STANDID").value));
+});
+addTree(); setNow(); renderGround([]); renderSaved(); updateTally(); netDot(); autoGPS();
+setField($("PLOTNUM"), nextPlotFor($("STANDID").value));
+// Opening a category slides it up so its header sits just under the top bar.
+document.querySelectorAll("details.sec").forEach(sec=>{
+  sec.addEventListener("toggle", ()=>{ if(sec.open) setTimeout(()=>scrollRowIntoView(sec),0); });
+});
+// After a field is set, lift the next field up to sit just beneath the header.
+const FIELD_SEL="select, input:not([type=file]), textarea";
+function fieldBlock(el){
+  // align the whole labeled container so the field NAME stays visible (not tucked under the header)
+  const row=el.closest(".rep"); if(row) return row;
+  let p=el.parentElement, hops=0;
+  while(p && hops<4){ if(p.querySelector(":scope > label")) return p; p=p.parentElement; hops++; }
+  return el;
+}
+function scrollBlockToTop(block){
+  const bar=document.querySelector(".appbar"); const headerH=(bar?bar.offsetHeight:90)+12; // just beneath the top bar
+  const delta=block.getBoundingClientRect().top-headerH;
+  if(Math.abs(delta)<40) return;                      // already aligned near the top — don't jitter
+  window.scrollTo({top:Math.max(0,window.scrollY+delta),behavior:"smooth"});
+}
+function advanceField(el){ scrollBlockToTop(fieldBlock(el)); }
+document.addEventListener("change",e=>{
+  const el=e.target;
+  if(!el.matches||!el.matches(FIELD_SEL)) return;
+  if(el.id==="addModalInput" || el.value===ADD_SENTINEL) return;
+  if($("addModal").style.display==="flex") return;    // species dialog open — leave the view alone
+  if(el.closest(".rep")) return;                       // tree/regen/shrub row — keep the Add button visible, don't advance past it
+  const sec=el.closest("details.sec"); if(!sec) return;
+  const vis=x=>x.offsetParent!==null && x.id!=="addModalInput";
+  // Right-column rule: a right-side field only advances when its left partner has data.
+  const fields=[...sec.querySelectorAll(FIELD_SEL)].filter(vis);
+  const fi=fields.indexOf(el);
+  if(fi>0){
+    const a=fieldBlock(el).getBoundingClientRect(), pv=fields[fi-1], b=fieldBlock(pv).getBoundingClientRect();
+    if(Math.abs(a.top-b.top)<24 && b.left<a.left){
+      const lv=String(pv.value||"").trim();
+      if(lv==="" || pv.value===ADD_SENTINEL) return;   // left empty → don't move the form up yet
+    }
+  }
+  // Advance to the next target within this section — a field OR a selector group like the ground-species chips.
+  const targets=[...sec.querySelectorAll(FIELD_SEL+", .chips")].filter(vis);
+  const ti=targets.indexOf(el);
+  if(ti<0 || ti+1>=targets.length) return;             // last target in the section — don't fling away
+  const next=targets[ti+1];
+  let block;
+  if(next.classList.contains("chips")){
+    const gh=next.previousElementSibling;
+    block=(gh&&gh.classList.contains("grouphd"))?gh:next; // include the group label so it stays visible
+  } else block=fieldBlock(next);
+  setTimeout(()=>scrollBlockToTop(block),0);
+});
+$("addModalInput").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); confirmAddSpecies(); } });
+flushQueue(); // push anything left queued from a previous offline session
+flushSpecies(); fetchSpecies(); // sync the shared species list
+flushTracts(); fetchTracts(); // sync the shared tract list
+flushPhotos(); updateArchiveBadge(); // upload any photos queued before the app was last closed, and show the on-device count
+$("restoreInput").addEventListener("change", e=>{ const f=e.target.files[0]; e.target.value=""; if(f) importBackup(f); }); // restore from a backup file
+// draft auto-save: persist the in-progress plot continuously, and flush immediately if the app is hidden/closed
+["input","change"].forEach(ev=>document.addEventListener(ev, scheduleDraftSave, true));
+document.addEventListener("visibilitychange", ()=>{ if(document.hidden) saveDraft(); });
+window.addEventListener("pagehide", saveDraft);
+checkDraft(); // if a previous session left a plot unsaved, offer to resume it
+// add-species dialog: suggest a code from the name until the user edits the code field
+$("addModalInput").addEventListener("input",()=>{ if($("addModalCodeRow").style.display!=="none" && !codeManual) $("addModalCode").value=suggestCode($("addModalInput").value); });
+$("addModalCode").addEventListener("input",()=>{ codeManual=true; });
+renderCruiser();
+if(!cruiser && $("draftRestore").style.display!=="flex") openCruiser(); // ask once on a new device
+// offline app: cache the page so it opens with no signal (live site only; no-op in sandbox)
+if("serviceWorker" in navigator){ try{ navigator.serviceWorker.register("./sw.js").catch(()=>{}); }catch(e){} }
+
+/* ====================== MAP TAB ====================== */
+let fmap=null, fpins=null, fboundLayer=null, flabelLayer=null, fmeMarker=null, fmeRing=null, fwatch=null;
+let mePos=null, BOUND=null, standField=null, mapLibsLoaded=false;
+// restore cached boundaries (best effort)
+try{ if(STORE){ const b=STORE.getItem("fi_boundaries"); if(b){ BOUND=JSON.parse(b); standField=STORE.getItem("fi_standfield")||null; } } }catch(e){}
+
+function loadScript(src){ return new Promise((res,rej)=>{ const s=document.createElement("script"); s.src=src; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); }
+async function loadMapLibs(){
+  if(mapLibsLoaded) return;
+  if(!window.L) await loadScript("https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js");
+  if(!window.shp) await loadScript("https://unpkg.com/shpjs@4.0.4/dist/shp.min.js");
+  mapLibsLoaded=true;
+}
+async function openMap(){
+  $("mapView").style.display="block";
+  try{ await loadMapLibs(); }catch(e){ toast("Map needs a connection the first time",true); }
+  if(!window.L){ return; }
+  if(!fmap) initMap();
+  setTimeout(()=>fmap.invalidateSize(),60);
+  if(BOUND){ renderBoundaries(); document.querySelector(".map-load").classList.add("has"); }
+  renderMapPins();
+  drawTrack();
+  startMapGPS();
+  centerMap();
+}
+function closeMap(){ $("mapView").style.display="none"; stopMapGPS();
+  if(typeof placeMode!=="undefined" && placeMode){ placeMode=false; if(placeMarker){ fmap.removeLayer(placeMarker); placeMarker=null; } $("toolPlace").classList.remove("on"); resetDropBar(); }
+  if(typeof measureMode!=="undefined" && measureMode) clearMeasure();
+  if(fmap) fmap.getContainer().style.cursor=""; closeLayersMenu(); }
+function initMap(){
+  fmap=L.map("fmap",{zoomControl:false,attributionControl:false}).setView([44.13,-79.49],14);
+  L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{maxZoom:22,maxNativeZoom:19}).addTo(fmap);
+  L.control.zoom({position:"bottomright"}).addTo(fmap);
+  fpins=L.layerGroup().addTo(fmap); fboundLayer=L.layerGroup().addTo(fmap); flabelLayer=L.layerGroup().addTo(fmap); refLayer=L.layerGroup().addTo(fmap);
+  fmap.on("click",e=>{ if(measureMode){ addMeasurePoint(e.latlng); return; } if(placeMode){ placeAt(e.latlng.lat,e.latlng.lng); return; } });
+  $("boundInput").addEventListener("change",e=>{ const f=e.target.files[0]; e.target.value=""; if(f) loadBoundaries(f); });
+  $("pointsInput").addEventListener("change",e=>{ const f=e.target.files[0]; e.target.value=""; if(f) importRefFile(f); });
+  $("pdfInput").addEventListener("change",e=>{ const f=e.target.files[0]; e.target.value=""; if(f) loadPdfOverlay(f); });
+}
+function centerMap(){
+  if(mePos){ fmap.setView([mePos.lat,mePos.lon],16); return; }
+  const cur={x:parseFloat($("X").value),y:parseFloat($("Y").value)};
+  if(!isNaN(cur.x)&&!isNaN(cur.y)){ fmap.setView([cur.y,cur.x],16); return; }
+  if(BOUND) fitBoundaries();
+}
+
+/* ----- boundaries (zipped shapefile via shpjs, or GeoJSON) ----- */
+function loadBoundaries(file){
+  toast("Reading boundaries…");
+  const lower=file.name.toLowerCase();
+  const done=gj=>{ BOUND=normalizeFC(gj); if(!BOUND.features.length){ toast("No shapes found",true); return; }
+    pickStandField(); cacheBoundaries(); renderBoundaries(); fitBoundaries();
+    document.querySelector(".map-load").classList.add("has"); toast(`Loaded ${BOUND.features.length} stands`); };
+  if(lower.endsWith(".geojson")||lower.endsWith(".json")){ file.text().then(t=>done(JSON.parse(t))).catch(()=>toast("Bad GeoJSON",true)); }
+  else { file.arrayBuffer().then(buf=>shp(buf)).then(done).catch(e=>toast("Shapefile error: "+e.message,true)); }
+}
+function normalizeFC(gj){
+  let feats=[]; const cols=Array.isArray(gj)?gj:[gj];
+  cols.forEach(fc=>{ if(fc&&fc.features) feats=feats.concat(fc.features); else if(fc&&fc.type==="Feature") feats.push(fc); });
+  feats=feats.filter(f=>f&&f.geometry&&(f.geometry.type==="Polygon"||f.geometry.type==="MultiPolygon"));
+  return { type:"FeatureCollection", features:feats };
+}
+function pickStandField(){
+  const keys=BOUND.features.length?Object.keys(BOUND.features[0].properties||{}):[];
+  const sel=$("standFieldSel"); sel.innerHTML=keys.map(k=>`<option value="${esc(k)}">${esc(k)}</option>`).join("");
+  if(!standField || !keys.includes(standField)){
+    standField = keys.find(k=>/stand|comp|cmpt|cmp|poly|unit|sfu|label|name|id/i.test(k)) || keys[0] || null;
+  }
+  if(standField) sel.value=standField;
+  $("mapFieldRow").style.display = keys.length>1 ? "flex" : "none";
+}
+function setStandField(k){ standField=k; cacheBoundaries(); renderBoundaries(); updateInStand(); }
+function cacheBoundaries(){ try{ if(STORE){ STORE.setItem("fi_boundaries",JSON.stringify(BOUND)); STORE.setItem("fi_standfield",standField||""); } }catch(e){} }
+function renderBoundaries(){
+  if(!fboundLayer) return; fboundLayer.clearLayers(); flabelLayer.clearLayers();
+  BOUND.features.forEach(f=>{
+    const polys=f.geometry.type==="Polygon"?[f.geometry.coordinates]:f.geometry.coordinates;
+    polys.forEach(rings=>{
+      const ll=rings[0].map(c=>[c[1],c[0]]);
+      L.polygon(ll,{color:"#8fd18a",weight:1.5,fillColor:"#8fd18a",fillOpacity:.08}).addTo(fboundLayer);
+      const c=centroid(rings[0]), name=standField?f.properties[standField]:"";
+      if(name!=null&&name!=="") L.marker([c[1],c[0]],{interactive:false,icon:L.divIcon({className:"",html:`<div class="standlabel">${esc(name)}</div>`,iconSize:[60,16],iconAnchor:[30,8]})}).addTo(flabelLayer);
+    });
+  });
+}
+function fitBoundaries(){ const b=[]; BOUND.features.forEach(f=>{ const polys=f.geometry.type==="Polygon"?[f.geometry.coordinates]:f.geometry.coordinates; polys.forEach(r=>r[0].forEach(c=>b.push([c[1],c[0]]))); }); if(b.length) fmap.fitBounds(b,{padding:[36,36]}); }
+
+/* ----- which stand is a point in? ----- */
+function standAt(lon,lat){
+  if(!BOUND||!standField) return null;
+  for(const f of BOUND.features){ const polys=f.geometry.type==="Polygon"?[f.geometry.coordinates]:f.geometry.coordinates;
+    for(const rings of polys){ if(pointInRing(lon,lat,rings[0])){ const v=f.properties[standField]; return (v==null?null:String(v)); } } }
+  return null;
+}
+function pointInRing(lon,lat,ring){ let inside=false;
+  for(let i=0,j=ring.length-1;i<ring.length;j=i++){ const xi=ring[i][0],yi=ring[i][1],xj=ring[j][0],yj=ring[j][1];
+    if(((yi>lat)!==(yj>lat)) && (lon < (xj-xi)*(lat-yi)/(yj-yi)+xi)) inside=!inside; }
+  return inside; }
+function centroid(ring){ let x=0,y=0,n=Math.max(ring.length-1,1); for(let i=0;i<n;i++){ x+=ring[i][0]; y+=ring[i][1]; } return [x/n,y/n]; }
+
+/* ----- live position ----- */
+function startMapGPS(){ if(!navigator.geolocation) return; stopMapGPS();
+  fwatch=navigator.geolocation.watchPosition(p=>{ mePos={lat:p.coords.latitude,lon:p.coords.longitude,alt:p.coords.altitude}; drawMe(); if(trackActive) addTrackPt(mePos.lat,mePos.lon); },
+    ()=>{}, {enableHighAccuracy:true,maximumAge:2000,timeout:15000}); }
+function stopMapGPS(){ if(fwatch!=null&&navigator.geolocation){ navigator.geolocation.clearWatch(fwatch); fwatch=null; } }
+function drawMe(){ if(!fmap||!mePos) return; const ll=[mePos.lat,mePos.lon];
+  if(!fmeMarker){ fmeMarker=L.marker(ll,{zIndexOffset:1000,icon:L.divIcon({className:"",html:`<div style="width:18px;height:18px"><div style="position:absolute;inset:4px;border-radius:50%;background:#4caf50;border:2px solid #fff;box-shadow:0 0 8px rgba(76,175,80,.9)"></div></div>`,iconSize:[18,18],iconAnchor:[9,9]})}).addTo(fmap);
+    fmeRing=L.circle(ll,{radius:14,color:"#4caf50",fillColor:"#4caf50",fillOpacity:.06,weight:1}).addTo(fmap); }
+  else { fmeMarker.setLatLng(ll); fmeRing.setLatLng(ll); }
+  updateInStand();
+}
+function updateInStand(){ const s=mePos?standAt(mePos.lon,mePos.lat):null; $("mapStandVal").textContent=s||"—"; $("mapStandPill").classList.toggle("in",!!s); }
+
+/* ----- plot pins from saved plots ----- */
+function renderMapPins(){ if(!fpins) return; fpins.clearLayers();
+  saved.forEach((p,i)=>{ const lat=parseFloat(p.Y), lon=parseFloat(p.X); if(isNaN(lat)||isNaN(lon)) return;
+    const icon=L.divIcon({className:"",html:`<div style="width:24px;height:24px;border-radius:50%;background:#e8b84b;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;font:700 10px/1 'Courier New',monospace;color:#1a2e18">${esc(p.PLOTNUM||"?")}</div>`,iconSize:[24,24],iconAnchor:[12,12]});
+    L.marker([lat,lon],{icon}).addTo(fpins)
+      .bindPopup(`<div style="font-family:'Courier New',monospace;font-size:12px;color:#16271a"><b>${esc(p.STANDID||"—")} · plot ${esc(p.PLOTNUM||"?")}</b><br>${(p.DATE||"").slice(0,16)}<br><a href="javascript:void(0)" onclick="editFromMap(${i})">Edit this plot ›</a></div>`);
+  });
+}
+function editFromMap(i){ closeMap(); editPlot(i); }
+
+/* ----- set the current plot's location + auto Stand ID ----- */
+function dropAtMe(){ if(!mePos){ toast("No GPS fix yet",true); return; } setLocation(mePos.lat,mePos.lon,"your location",mePos.alt); }
+function setLocation(lat,lon,src,alt){
+  $("X").value=lon.toFixed(6); $("Y").value=lat.toFixed(6);
+  if(alt!=null&&!isNaN(alt)) $("Z").value=Number(alt).toFixed(1);
+  $("gpsHint") && ($("gpsHint").textContent=`Set from map (${src}).`);
+  const stand=standAt(lon,lat);
+  if(stand){ addStand(stand); standSelect(); setSel($("STANDID"),stand); if(typeof editingIndex!=="undefined"&&editingIndex==null) setField($("PLOTNUM"), nextPlotFor(stand)); }
+  closeMap();
+  toast(stand?`Location set · Stand ID → ${stand}`:"Location set — choose Stand ID");
+}
+/* keep pins fresh after a submit */
+const _origRenderSaved=typeof renderSaved==="function"?renderSaved:null;
+if(_origRenderSaved){ renderSaved=function(){ _origRenderSaved.apply(this,arguments); if(fpins) renderMapPins(); }; }
+
+/* ====================== MAP TOOLS: layers · place · measure · GeoPDF · import ====================== */
+let refLayer=null, placeMode=false, placeMarker=null;
+let measureMode=false, measurePts=[], measureLine=null, measureMarks=[];
+let pdfOverlay=null, pdfBounds=null, pdfVisible=true;
+/* ---- GPS track log (records your path; export as GeoJSON) ---- */
+let trackActive=false, trackLog=[], trackLine=null, _lastTrackPersist=0;
+if(STORE){ try{ const t=JSON.parse(STORE.getItem("fi_track")); if(Array.isArray(t)) trackLog=t; }catch(e){} }
+function trackDist(a,b,c,d){ const R=6371000,toR=x=>x*Math.PI/180,dLat=toR(c-a),dLon=toR(d-b);
+  const s=Math.sin(dLat/2)**2+Math.cos(toR(a))*Math.cos(toR(c))*Math.sin(dLon/2)**2; return 2*R*Math.asin(Math.sqrt(s)); }
+function addTrackPt(lat,lon){
+  const last=trackLog[trackLog.length-1];
+  if(last && trackDist(last[0],last[1],lat,lon)<3) return;      // throttle: skip sub-3 m moves
+  trackLog.push([lat,lon]);
+  if(fmap){ if(!trackLine) trackLine=L.polyline(trackLog,{color:"#ff9800",weight:3,opacity:.85}).addTo(fmap); else trackLine.setLatLngs(trackLog); }
+  const now=Date.now(); if(now-_lastTrackPersist>4000){ _lastTrackPersist=now; persistTrack(); }
+}
+function persistTrack(){ if(STORE){ try{ STORE.setItem("fi_track",JSON.stringify(trackLog.slice(-5000))); }catch(e){} } }
+function drawTrack(){ if(fmap && trackLog.length && !trackLine) trackLine=L.polyline(trackLog,{color:"#ff9800",weight:3,opacity:.85}).addTo(fmap); }
+function toggleTrack(){
+  trackActive=!trackActive; const btn=$("toolTrack");
+  if(trackActive){ btn.classList.add("on"); btn.textContent="⏹"; if(!fwatch) startMapGPS(); toast("Track recording on"); }
+  else { btn.classList.remove("on"); btn.textContent="⏺"; persistTrack(); toast(`Track paused — ${trackLog.length} pts`); }
+}
+function clearTrack(){ trackLog=[]; if(trackLine){ fmap.removeLayer(trackLine); trackLine=null; } persistTrack(); toast("Track cleared"); }
+function exportTrack(){
+  if(trackLog.length<2){ toast("No track to export yet",true); return; }
+  const gj={type:"FeatureCollection",features:[{type:"Feature",properties:{recorded:new Date().toISOString(),points:trackLog.length},geometry:{type:"LineString",coordinates:trackLog.map(p=>[p[1],p[0]])}}]};
+  const blob=new Blob([JSON.stringify(gj)],{type:"application/geo+json"}), url=URL.createObjectURL(blob), a=document.createElement("a");
+  a.href=url; a.download=`FRItrack_${nowStr().replace(/[: ]/g,"-")}.geojson`; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500); toast(`Track exported — ${trackLog.length} pts`);
+}
+
+function toggleLayersMenu(){ const m=$("layersMenu"); m.style.display = m.style.display==="none"?"flex":"none"; }
+function closeLayersMenu(){ $("layersMenu").style.display="none"; }
+
+/* ---- manual plot placement (tap to drop, drag to fine-tune) ---- */
+function togglePlace(){
+  placeMode=!placeMode;
+  if(placeMode && measureMode) toggleMeasure();
+  $("toolPlace").classList.toggle("on",placeMode);
+  fmap.getContainer().style.cursor = placeMode?"crosshair":"";
+  if(placeMode) toast("Tap the map to place this plot");
+  else { if(placeMarker){ fmap.removeLayer(placeMarker); placeMarker=null; } resetDropBar(); }
+}
+function placeAt(lat,lon){
+  if(!placeMarker){
+    placeMarker=L.marker([lat,lon],{draggable:true,zIndexOffset:1500,icon:L.divIcon({className:"",html:'<div style="width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:#e8b84b;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.6)"></div>',iconSize:[26,26],iconAnchor:[13,26]})}).addTo(fmap);
+    placeMarker.on("dragend",()=>{ const ll=placeMarker.getLatLng(); fillPlace(ll.lat,ll.lng); });
+  } else placeMarker.setLatLng([lat,lon]);
+  fillPlace(lat,lon);
+  $("mapDrop").innerHTML='<button class="dropbtn" type="button" onclick="confirmPlace()">✓ Use this location</button>';
+}
+function fillPlace(lat,lon){
+  $("X").value=lon.toFixed(6); $("Y").value=lat.toFixed(6); $("gpsHint")&&($("gpsHint").textContent="Placed by hand on the map.");
+  const stand=standAt(lon,lat);
+  if(stand){ addStand(stand); standSelect(); setSel($("STANDID"),stand); if(typeof editingIndex!=="undefined"&&editingIndex==null) setField($("PLOTNUM"),nextPlotFor(stand)); }
+  $("mapStandVal").textContent=stand||"—"; $("mapStandPill").classList.toggle("in",!!stand);
+}
+function confirmPlace(){
+  const stand=$("STANDID").value; placeMode=false;
+  if(placeMarker){ fmap.removeLayer(placeMarker); placeMarker=null; }
+  $("toolPlace").classList.remove("on"); fmap.getContainer().style.cursor=""; resetDropBar(); closeMap();
+  toast(stand?`Location set · Stand ID → ${stand}`:"Location set — choose Stand ID");
+}
+function resetDropBar(){ $("mapDrop").innerHTML='<button class="dropbtn" type="button" onclick="dropAtMe()">＋ Drop plot at my location</button>'; }
+
+/* ---- measure distance / area ---- */
+function toggleMeasure(){
+  measureMode=!measureMode;
+  if(measureMode && placeMode) togglePlace();
+  $("toolMeasure").classList.toggle("on",measureMode);
+  if(measureMode){ fmap.getContainer().style.cursor="crosshair"; $("measureBar").style.display="flex"; $("measureText").textContent="Tap points on the map"; toast("Tap points — Done when finished"); }
+  else clearMeasure();
+}
+function addMeasurePoint(ll){
+  measurePts.push(ll);
+  measureMarks.push(L.circleMarker(ll,{radius:5,color:"#e8b84b",fillColor:"#e8b84b",fillOpacity:1,weight:2,interactive:false}).addTo(fmap));
+  if(measureLine) fmap.removeLayer(measureLine);
+  if(measurePts.length>1) measureLine=L.polyline(measurePts,{color:"#e8b84b",weight:2.5,opacity:.9,interactive:false}).addTo(fmap);
+  updateMeasure();
+}
+function updateMeasure(){ const p=measurePts; if(p.length<2){ $("measureText").textContent=p.length?"1 point — tap more":"Tap points on the map"; return; }
+  let t=0; for(let i=1;i<p.length;i++) t+=p[i-1].distanceTo(p[i]); $("measureText").textContent="📏 "+(t>=1000?(t/1000).toFixed(3)+" km":t.toFixed(1)+" m")+" ("+p.length+")"; }
+function finishMeasure(){ if(measurePts.length<2){ toast("Need at least 2 points"); return; }
+  let t=0; for(let i=1;i<measurePts.length;i++) t+=measurePts[i-1].distanceTo(measurePts[i]);
+  let txt="📏 "+(t>=1000?(t/1000).toFixed(3)+" km":t.toFixed(1)+" m");
+  if(measurePts.length>=3){ const a=calcArea(measurePts); txt+=" · 🔲 "+(a>=10000?(a/10000).toFixed(3)+" ha":a.toFixed(0)+" m²"); }
+  $("measureText").textContent=txt; measureMode=false; fmap.getContainer().style.cursor=""; $("toolMeasure").classList.remove("on"); }
+function calcArea(pts){ const o=pts[0], c=pts.map(p=>[(p.lng-o.lng)*111320*Math.cos(o.lat*Math.PI/180),(p.lat-o.lat)*111320]);
+  let a=0; for(let i=0;i<c.length;i++){ const j=(i+1)%c.length; a+=c[i][0]*c[j][1]-c[j][0]*c[i][1]; } return Math.abs(a)/2; }
+function clearMeasure(){ measurePts=[]; measureMarks.forEach(m=>fmap.removeLayer(m)); measureMarks=[];
+  if(measureLine){ fmap.removeLayer(measureLine); measureLine=null; } measureMode=false; fmap.getContainer().style.cursor="";
+  $("toolMeasure").classList.remove("on"); $("measureBar").style.display="none"; }
+
+/* ---- import reference points / lines / polygons (shapefile, GeoJSON, GPX) ---- */
+function importRefFile(file){
+  toast("Reading…"); const lower=file.name.toLowerCase();
+  const done=gj=>{ const n=renderRef(gj); toast(n?`Imported ${n} feature${n>1?"s":""}`:"Nothing to import",!n); };
+  if(lower.endsWith(".geojson")||lower.endsWith(".json")) file.text().then(t=>done(JSON.parse(t))).catch(()=>toast("Bad GeoJSON",true));
+  else if(lower.endsWith(".gpx")) file.text().then(t=>done(gpxToGeo(t))).catch(()=>toast("Bad GPX",true));
+  else file.arrayBuffer().then(b=>shp(b)).then(done).catch(e=>toast("Shapefile error",true));
+}
+function renderRef(gj){
+  if(!refLayer) return 0; const cols=Array.isArray(gj)?gj:[gj]; let n=0; const b=[];
+  const pal=["#ff7043","#80cbc4","#ffe082","#ce93d8","#a5d6a7","#90caf9"]; let ci=0;
+  cols.forEach(fc=>{ if(!fc||!fc.features) return; const col=pal[ci++%pal.length];
+    fc.features.forEach(f=>{ const g=f.geometry, pr=f.properties||{}; if(!g) return;
+      const label=Object.values(pr).filter(v=>v!=null&&v!=="").slice(0,2).join(" — ")||"feature";
+      const addPt=(lon,lat)=>{ if(!isFinite(lat)||!isFinite(lon)) return;
+        L.circleMarker([lat,lon],{radius:6,color:"#fff",weight:1.5,fillColor:"#ff7043",fillOpacity:.95}).addTo(refLayer)
+         .bindPopup(`<div style="font-family:monospace;font-size:11px;color:#16271a"><b>${esc(label)}</b><br>${lat.toFixed(5)}, ${lon.toFixed(5)}<br><a href="javascript:void(0)" onclick="placeFromRef(${lat},${lon})">Place plot here ›</a></div>`);
+        b.push([lat,lon]); n++; };
+      if(g.type==="Point") addPt(g.coordinates[0],g.coordinates[1]);
+      else if(g.type==="MultiPoint") g.coordinates.forEach(c=>addPt(c[0],c[1]));
+      else if(g.type==="LineString"){ const co=g.coordinates.map(c=>[c[1],c[0]]); L.polyline(co,{color:col,weight:3,opacity:.9}).addTo(refLayer).bindPopup(esc(label)); co.forEach(c=>b.push(c)); n++; }
+      else if(g.type==="MultiLineString") g.coordinates.forEach(l=>{ const co=l.map(c=>[c[1],c[0]]); L.polyline(co,{color:col,weight:3,opacity:.9}).addTo(refLayer); co.forEach(c=>b.push(c)); n++; });
+      else if(g.type==="Polygon"){ const co=g.coordinates.map(r=>r.map(c=>[c[1],c[0]])); L.polygon(co,{color:col,weight:2,fillOpacity:.12}).addTo(refLayer).bindPopup(esc(label)); co[0].forEach(c=>b.push(c)); n++; }
+      else if(g.type==="MultiPolygon") g.coordinates.forEach(p=>{ const co=p.map(r=>r.map(c=>[c[1],c[0]])); L.polygon(co,{color:col,weight:2,fillOpacity:.12}).addTo(refLayer); co[0].forEach(c=>b.push(c)); n++; });
+    }); });
+  if(b.length) fmap.fitBounds(b,{padding:[36,36]});
+  return n;
+}
+function placeFromRef(lat,lon){ setLocation(lat,lon,"reference point"); }
+function gpxToGeo(text){ const xml=new DOMParser().parseFromString(text,"application/xml"); const feats=[];
+  xml.querySelectorAll("wpt").forEach(w=>{ const lat=+w.getAttribute("lat"),lon=+w.getAttribute("lon"); const nm=w.querySelector("name");
+    if(isFinite(lat)&&isFinite(lon)) feats.push({type:"Feature",properties:{note:nm?nm.textContent:""},geometry:{type:"Point",coordinates:[lon,lat]}}); });
+  xml.querySelectorAll("trkseg").forEach(seg=>{ const co=[...seg.querySelectorAll("trkpt")].map(p=>[+p.getAttribute("lon"),+p.getAttribute("lat")]).filter(c=>isFinite(c[0]));
+    if(co.length>1) feats.push({type:"Feature",properties:{},geometry:{type:"LineString",coordinates:co}}); });
+  return {type:"FeatureCollection",features:feats}; }
+
+/* ---- georeferenced PDF overlay (reads embedded GeoPDF georeferencing) ---- */
+function loadPdfOverlay(file){
+  toast("Reading PDF…");
+  file.arrayBuffer().then(buf=>{ const geo=parseGeo(new Uint8Array(buf));
+    if(!geo){ toast("No georeference found in that PDF",true); return; }
+    toast("Rendering…");
+    renderPDF(buf.slice(0),geo).then(imgUrl=>{
+      const lats=geo.corners.map(c=>c.lat), lons=geo.corners.map(c=>c.lon);
+      pdfBounds=L.latLngBounds([Math.min(...lats),Math.min(...lons)],[Math.max(...lats),Math.max(...lons)]);
+      if(pdfOverlay) fmap.removeLayer(pdfOverlay);
+      pdfOverlay=L.imageOverlay(imgUrl,pdfBounds,{opacity:.85,interactive:false}).addTo(fmap); pdfVisible=true;
+      $("toolPdf").style.display="flex"; $("toolPdf").classList.add("on");
+      $("pdfOpacityBar").style.display="flex"; $("pdfOpacity").value=85; $("pdfOpacityVal").textContent="85%";
+      fmap.fitBounds(pdfBounds,{padding:[30,30]}); toast("PDF map loaded");
+    }).catch(()=>toast("PDF render failed",true));
+  }).catch(()=>toast("Couldn't read the PDF",true));
+}
+function setPDFOpacity(v){ $("pdfOpacityVal").textContent=v+"%"; if(pdfOverlay&&pdfVisible) pdfOverlay.setOpacity(v/100); }
+function togglePDF(){ if(!pdfOverlay) return; pdfVisible=!pdfVisible; const btn=$("toolPdf");
+  if(pdfVisible){ pdfOverlay.setOpacity($("pdfOpacity").value/100); btn.classList.add("on"); } else { pdfOverlay.setOpacity(0); btn.classList.remove("on"); } }
+function parseGeo(bytes){
+  const text=new TextDecoder("latin1").decode(bytes);
+  const gm=text.match(/\/GPTS\s*\[([^\]]+)\]/); if(!gm) return null;
+  const gpts=gm[1].trim().split(/\s+/).map(Number);
+  const lm=text.match(/\/LPTS\s*\[([^\]]+)\]/); const lpts=lm?lm[1].trim().split(/\s+/).map(Number):[0,0,1,0,1,1,0,1];
+  const mbm=text.match(/\/MediaBox\s*\[([^\]]+)\]/); const mb=mbm?mbm[1].trim().split(/\s+/).map(Number):[0,0,612,792];
+  const pageW=mb[2]-mb[0], pageH=mb[3]-mb[1];
+  const gptsPos=text.indexOf("/GPTS"); let bboxArr=[0,0,pageW,pageH];
+  const win=text.substring(Math.max(0,gptsPos-3000),gptsPos+500); const mm=[...win.matchAll(/\/BBox\s*\[([^\]]+)\]/g)];
+  if(mm.length){ const arr=mm[mm.length-1][1].trim().split(/\s+/).map(Number); if(arr.length===4) bboxArr=arr; }
+  const bbox={left:bboxArr[0],bottom:bboxArr[1],right:bboxArr[2],top:bboxArr[3]}, bW=bbox.right-bbox.left, bH=bbox.top-bbox.bottom;
+  const corners=[];
+  for(let i=0;i<4;i++){ const lat=gpts[i*2], lon=gpts[i*2+1], lx=lpts[i*2], ly=lpts[i*2+1];
+    const absX=bbox.left+lx*bW, absY=bbox.bottom+ly*bH; corners.push({lat,lon,px:absX/pageW,py:1-(absY/pageH)}); }
+  const needsCrop=(bboxArr[0]>2||bboxArr[1]>2||Math.abs(bboxArr[2]-pageW)>2||Math.abs(bboxArr[3]-pageH)>2);
+  return {corners,pageW,pageH,bboxPts:needsCrop?bbox:null};
+}
+function renderPDF(buf,geo){
+  return loadPdfJs().then(()=>pdfjsLib.getDocument({data:buf}).promise).then(pdf=>pdf.getPage(1)).then(page=>{
+    const sc=(window.devicePixelRatio||2)*1.5, vp=page.getViewport({scale:sc});
+    const full=document.createElement("canvas"); full.width=vp.width; full.height=vp.height;
+    return page.render({canvasContext:full.getContext("2d"),viewport:vp}).promise.then(()=>{
+      const view=page.view, pageWpts=view[2]-view[0], pageHpts=view[3]-view[1];
+      if(geo&&geo.bboxPts&&geo.corners&&geo.corners.length===4){
+        const {left,bottom,right,top}=geo.bboxPts, scaleX=full.width/pageWpts, scaleY=full.height/pageHpts;
+        const cropX=Math.round(left*scaleX), cropY=Math.round((pageHpts-top)*scaleY), cropW=Math.round((right-left)*scaleX), cropH=Math.round((top-bottom)*scaleY);
+        if(cropW>10&&cropH>10){
+          const cropped=document.createElement("canvas"); cropped.width=cropW; cropped.height=cropH;
+          cropped.getContext("2d").drawImage(full,cropX,cropY,cropW,cropH,0,0,cropW,cropH);
+          const lats=geo.corners.map(c=>c.lat), lons=geo.corners.map(c=>c.lon);
+          const minLat=Math.min(...lats),maxLat=Math.max(...lats),minLon=Math.min(...lons),maxLon=Math.max(...lons);
+          const latSpan=maxLat-minLat, lonSpan=maxLon-minLon, cosLat=Math.cos(((minLat+maxLat)/2)*Math.PI/180);
+          const outW=cropW, outH=Math.round(outW*latSpan/(lonSpan*cosLat));
+          const srcPts=geo.corners.map(c=>({x:c.px<0.5?0:cropW,y:c.py<0.5?0:cropH}));
+          const dstPts=geo.corners.map(c=>({x:(c.lon-minLon)/lonSpan*outW,y:(maxLat-c.lat)/latSpan*outH}));
+          const out=document.createElement("canvas"); out.width=outW; out.height=outH; const ctx=out.getContext("2d");
+          drawWarpedTriangle(ctx,cropped,0,0,srcPts[0],srcPts[1],srcPts[2],dstPts[0],dstPts[1],dstPts[2]);
+          drawWarpedTriangle(ctx,cropped,0,0,srcPts[0],srcPts[2],srcPts[3],dstPts[0],dstPts[2],dstPts[3]);
+          return out.toDataURL("image/jpeg",.92);
+        }
+      }
+      return full.toDataURL("image/jpeg",.92);
+    });
+  });
+}
+function drawWarpedTriangle(ctx,srcCanvas,ox,oy,s0,s1,s2,d0,d1,d2){
+  ctx.save(); ctx.beginPath(); ctx.moveTo(d0.x,d0.y); ctx.lineTo(d1.x,d1.y); ctx.lineTo(d2.x,d2.y); ctx.closePath(); ctx.clip();
+  const denom=(s0.x*(s1.y-s2.y)+s1.x*(s2.y-s0.y)+s2.x*(s0.y-s1.y)); if(Math.abs(denom)<0.001){ ctx.restore(); return; }
+  const a=((d0.x-d2.x)*(s1.y-s2.y)-(d1.x-d2.x)*(s0.y-s2.y))/denom, b=((d0.y-d2.y)*(s1.y-s2.y)-(d1.y-d2.y)*(s0.y-s2.y))/denom;
+  const c=((d1.x-d2.x)*(s0.x-s2.x)-(d0.x-d2.x)*(s1.x-s2.x))/denom, d=((d1.y-d2.y)*(s0.x-s2.x)-(d0.y-d2.y)*(s1.x-s2.x))/denom;
+  const e=d2.x-a*s2.x-c*s2.y, f=d2.y-b*s2.x-d*s2.y;
+  ctx.transform(a,b,c,d,e,f); ctx.drawImage(srcCanvas,ox,oy); ctx.restore();
+}
+function loadPdfJs(){ if(window.pdfjsLib) return Promise.resolve();
+  return loadScript("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js").then(()=>{ pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }); }
+</script>
+</body>
+</html>
