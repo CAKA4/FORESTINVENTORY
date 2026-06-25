@@ -1,7 +1,0 @@
-# © 2026 Silv-Econ Ltd. All rights reserved. Proprietary.
-# Do not index or crawl. (Note: on a GitHub Pages *project* site this file
-# is only honoured if served at the domain root; the per-page
-# <meta name="robots" content="noindex,nofollow"> in index.html is what
-# reliably keeps this app out of search engines.)
-User-agent: *
-Disallow: /
